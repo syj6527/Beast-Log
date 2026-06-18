@@ -43,6 +43,9 @@
 .bl-up { cursor: pointer; font-size: 16px; padding: 2px 4px; }
 
 .bl-panes { display: grid; grid-template-columns: 1.25fr 1fr; gap: 8px; padding: 9px; }
+.bl-mini-slots { display: flex; flex-direction: column; gap: 6px; padding: 0 9px 10px; }
+.bl-mini-slots .bl-slot { padding: 6px 9px; }
+.bl-mini-slots .bl-slot-v { font-size: 11px; }
 .bl-pane-l { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .bl-pane-r { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 

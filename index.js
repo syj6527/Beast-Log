@@ -1,7 +1,7 @@
-// 🐯 비스트로그 (Beast Log) v0.20.0 — font-synthesis 가짜볼드 제거(모바일 폰트 번짐) + 아이콘만 버블 모드 + 인물도감 개별/전체 삭제
+// 🐯 비스트로그 (Beast Log) v0.20.1 — 미니탭에 현재 상황·현재 조우 슬롯 추가 (출현/상황 아래 가로 전체)
 // 버전 3곳 동시 갱신: (1) 이 주석, (2) BEASTLOG_VERSION, (3) manifest.json
 
-const BEASTLOG_VERSION = '0.20.0';
+const BEASTLOG_VERSION = '0.20.1';
 const MODULE = 'beast_log';
 let LAST_ERROR = '';
 try { console.log('[비스트로그] script loaded v' + BEASTLOG_VERSION); } catch (e) { /* noop */ }
@@ -415,6 +415,10 @@ function buildConsole() {
           <button class="bl-randevent">🌦️ 상황</button>
           <div class="bl-cooldown num"></div>
         </div>
+      </div>
+      <div class="bl-mini-slots">
+        <div class="bl-slot"><span class="bl-slot-h">📢 현재 상황</span><span class="bl-slot-v bl-sit-v"></span></div>
+        <div class="bl-slot"><span class="bl-slot-h">👤 현재 조우</span><span class="bl-slot-v bl-npc-v"></span></div>
       </div>`;
     (document.documentElement || document.body).appendChild(consoleEl);
     consoleEl.querySelector('.bl-sw').addEventListener('click', () => setInjectDefault(!STATE.settings.injectDefault));
@@ -495,6 +499,8 @@ function renderConsole() {
     consoleEl.querySelector('.bl-mb-cnt').textContent = STATE.items.length;
     const rem = injectRemaining();
     consoleEl.querySelector('.bl-cooldown').textContent = rem > 0 ? `💉 ${rem}턴` : '💉 준비';
+    consoleEl.querySelector('.bl-sit-v').innerHTML = sitLine();
+    consoleEl.querySelector('.bl-npc-v').innerHTML = npcLine();
 }
 
 // ── 풀버전 (리치) ──
