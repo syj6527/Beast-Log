@@ -1,7 +1,7 @@
-// 🐯 비스트로그 (Beast Log) v0.19.2 — 큰 창·팝업 전체화면을 inset:0 대신 100vw/vh로 (꼭대기 0높이 기준박스 회피) → 모바일에서 큰 창 정상 표시
+// 🐯 비스트로그 (Beast Log) v0.20.0 — font-synthesis 가짜볼드 제거(모바일 폰트 번짐) + 아이콘만 버블 모드 + 인물도감 개별/전체 삭제
 // 버전 3곳 동시 갱신: (1) 이 주석, (2) BEASTLOG_VERSION, (3) manifest.json
 
-const BEASTLOG_VERSION = '0.19.2';
+const BEASTLOG_VERSION = '0.20.0';
 const MODULE = 'beast_log';
 let LAST_ERROR = '';
 try { console.log('[비스트로그] script loaded v' + BEASTLOG_VERSION); } catch (e) { /* noop */ }
@@ -321,6 +321,15 @@ function deleteEncounter(id) { STATE.encounters = STATE.encounters.filter(x => x
 function clearEncounters() { showConfirm('모험일지 비우기', '기록을 전부 지울까요? 되돌릴 수 없어요.', () => { STATE.encounters = []; saveState(STATE); renderAll(); }); }
 function deleteItem(id) { STATE.items = STATE.items.filter(x => x.id !== id); saveState(STATE); renderAll(); }
 function clearItems() { showConfirm('가방 비우기', '소지품을 전부 버릴까요?', () => { STATE.items = []; saveState(STATE); renderAll(); }); }
+function deleteNpc(name) {
+    const n = STATE.npcs[name]; if (!n) return;
+    showConfirm('인물 삭제', `'${n.nickname || n.name}'을(를) 도감에서 지울까요? 되돌릴 수 없어요.`, () => {
+        delete STATE.npcs[name];
+        if (STATE.currentNpc === name) STATE.currentNpc = null;
+        saveState(STATE); renderAll();
+    });
+}
+function clearNpcs() { showConfirm('도감 전체 삭제', '인물 도감을 통째로 비울까요? 되돌릴 수 없어요.', () => { STATE.npcs = {}; STATE.currentNpc = null; saveState(STATE); renderAll(); }); }
 
 // ── 주입 ──
 function injectProse(prose) {
@@ -382,6 +391,7 @@ function buildConsole() {
         <span class="bl-grip">⠿</span><span class="bl-title">비스트로그</span>
         <span class="bl-spacer"></span>
         <span class="bl-inject"><span class="bl-lab">📤</span><span class="bl-sw" data-on="true"></span></span>
+        <span class="bl-min" title="아이콘만">▁</span>
         <span class="bl-up" title="기록·설정 열기">📖</span>
       </div>
       <div class="bl-panes">
@@ -412,6 +422,7 @@ function buildConsole() {
     consoleEl.querySelector('.bl-roll').addEventListener('click', onAppear);
     consoleEl.querySelector('.bl-randevent').addEventListener('click', onSituation);
     consoleEl.querySelector('.bl-up').addEventListener('click', showFull);
+    consoleEl.querySelector('.bl-min').addEventListener('click', collapseToBubble);
     consoleEl.querySelector('.bl-bag-inject').addEventListener('click', injectBait);
     const mbh = consoleEl.querySelector('.bl-mb-h');
     mbh.addEventListener('click', e => { if (e.target.closest('.bl-bag-inject')) return; mbh.parentElement.classList.toggle('collapsed'); });
@@ -528,7 +539,7 @@ function buildFull() {
             <div class="bl-acc-body"><div class="bl-enc-list"></div></div>
           </div>
           <div class="bl-acc">
-            <div class="bl-acc-head"><h3>📖 인물 도감</h3><span class="bl-rule"></span><span class="bl-dex-cnt num"></span><span class="bl-chev">▾</span></div>
+            <div class="bl-acc-head"><h3>📖 인물 도감</h3><span class="bl-rule"></span><span class="bl-dex-cnt num"></span><button class="bl-clear-btn bl-dex-clear" title="도감 전체 삭제">🧹</button><span class="bl-chev">▾</span></div>
             <div class="bl-acc-body"><div class="bl-dex-list"></div></div>
           </div>
           <div class="bl-acc">
@@ -547,6 +558,7 @@ function buildFull() {
     fullEl.querySelector('.bl-rand2').addEventListener('click', onSituation);
     fullEl.querySelectorAll('.bl-acc-head').forEach(h => h.addEventListener('click', e => { if (e.target.closest('.bl-clear-btn')) return; h.parentElement.classList.toggle('collapsed'); }));
     fullEl.querySelector('.bl-enc-clear').addEventListener('click', e => { e.stopPropagation(); clearEncounters(); });
+    fullEl.querySelector('.bl-dex-clear').addEventListener('click', e => { e.stopPropagation(); clearNpcs(); });
     fullEl.querySelector('.bl-bag-clear').addEventListener('click', e => { e.stopPropagation(); clearItems(); });
     fullEl.querySelector('.bl-pet-pick').addEventListener('click', e => { const b = e.target.closest('.bl-pick-btn'); if (b) pickMascot(b.dataset.m); });
     fullEl.querySelector('.bl-enc-list').addEventListener('click', e => {
@@ -562,6 +574,8 @@ function buildFull() {
         }
     });
     fullEl.querySelector('.bl-dex-list').addEventListener('click', e => {
+        const del = e.target.closest('.bl-dex-del');
+        if (del) { deleteNpc(del.dataset.npc); return; }
         const rn = e.target.closest('.bl-dex-rename');
         if (rn) { renameNpc(rn.dataset.npc); return; }
         const head = e.target.closest('.bl-dex-head');
@@ -604,7 +618,7 @@ function dexCard(n) {
           <div class="bl-dex-row"><span>현재 상태</span><b>${escapeHtml(n.state || '평범함')}</b></div>
           <div class="bl-dex-mem">💭 특별 기억 — ${n.memory ? escapeHtml(n.memory) : '<span class="bl-dim">아직 없음</span>'}</div>
           ${logHtml}
-          <button class="bl-dex-rename" data-npc="${escapeHtml(n.name)}">✏️ 이름 짓기</button>
+          <div class="bl-dex-btns"><button class="bl-dex-rename" data-npc="${escapeHtml(n.name)}">✏️ 이름 짓기</button><button class="bl-dex-del" data-npc="${escapeHtml(n.name)}" title="이 인물 삭제">🗑️ 삭제</button></div>
         </div>
       </div>`;
 }
@@ -660,10 +674,36 @@ function renderFull() {
 }
 
 // ── 상태 전환 ──
-function showMini() { if (consoleEl) consoleEl.style.display = ''; if (fullEl) fullEl.style.display = 'none'; ensureMounted(); applyConsolePos(); renderConsole(); }
-function showFull() { buildFull(); if (consoleEl) consoleEl.style.display = 'none'; fullEl.style.display = 'flex'; renderFull(); }
+function showMini() { if (bubbleEl) bubbleEl.style.display = 'none'; if (consoleEl) consoleEl.style.display = ''; if (fullEl) fullEl.style.display = 'none'; ensureMounted(); applyConsolePos(); renderConsole(); }
+function showFull() { buildFull(); if (bubbleEl) bubbleEl.style.display = 'none'; if (consoleEl) consoleEl.style.display = 'none'; fullEl.style.display = 'flex'; renderFull(); }
 function hideHud() { if (consoleEl) consoleEl.style.display = 'none'; if (fullEl) fullEl.style.display = 'none'; }
-function renderAll() { renderConsole(); if (fullEl) renderFull(); }
+function renderAll() { renderConsole(); if (fullEl) renderFull(); if (bubbleEl) bubbleEl.textContent = evoStage(STATE.level).emoji; }
+
+let bubbleEl = null;
+function buildBubble() {
+    if (bubbleEl) return;
+    bubbleEl = document.createElement('div');
+    bubbleEl.id = 'beastlog-bubble';
+    bubbleEl.title = '비스트로그 열기';
+    Object.assign(bubbleEl.style, { position: 'fixed', zIndex: '2147483000', display: 'none' });
+    (document.documentElement || document.body).appendChild(bubbleEl);
+    bubbleEl.addEventListener('click', showMini);
+}
+function positionBubble() {
+    if (!bubbleEl) return;
+    const sz = bubbleEl.offsetWidth || 52;
+    bubbleEl.style.left = Math.max(4, window.innerWidth - sz - 12) + 'px';
+    bubbleEl.style.top = Math.max(4, window.innerHeight - sz - 16) + 'px';
+    bubbleEl.style.right = 'auto'; bubbleEl.style.bottom = 'auto';
+}
+function collapseToBubble() {
+    buildBubble();
+    bubbleEl.textContent = evoStage(STATE.level).emoji;
+    if (consoleEl) consoleEl.style.display = 'none';
+    if (fullEl) fullEl.style.display = 'none';
+    bubbleEl.style.display = 'flex';
+    positionBubble();
+}
 
 // ── 확장탭 설정창 ──
 function buildSettingsWithRetry(tries) {
@@ -932,8 +972,8 @@ function init() {
         setTimeout(() => { ensureMounted(); applyConsolePos(); }, 1500);
         setTimeout(ensureMounted, 4000);
         setTimeout(diag, 800);
-        window.addEventListener('resize', () => { ensureMounted(); applyConsolePos(); });
-        window.addEventListener('orientationchange', () => setTimeout(applyConsolePos, 200));
+        window.addEventListener('resize', () => { ensureMounted(); applyConsolePos(); positionBubble(); });
+        window.addEventListener('orientationchange', () => setTimeout(() => { applyConsolePos(); positionBubble(); }, 200));
         blDebug('비스트로그', BEASTLOG_VERSION, '로드됨');
     } catch (e) { LAST_ERROR = (e && (e.stack || e.message)) || String(e); console.error('[비스트로그] init 실패:', e); }
 }

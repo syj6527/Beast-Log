@@ -13,8 +13,9 @@
 /* ===== 공통 ===== */
 #beastlog-console, #beastlog-console *, #beastlog-popup, #beastlog-popup *,
 #beastlog-full, #beastlog-full *, #beastlog-settings .beast-log-settings * { box-sizing: border-box; }
-#beastlog-console, #beastlog-popup, #beastlog-full { font-family: var(--bl-prose); color: var(--bl-ink); }
-#beastlog-console, #beastlog-popup, #beastlog-full, #beastlog-console *, #beastlog-popup *, #beastlog-full * { -webkit-tap-highlight-color: transparent; }
+#beastlog-console, #beastlog-popup, #beastlog-full, #beastlog-bubble { font-family: var(--bl-prose); color: var(--bl-ink); }
+#beastlog-console, #beastlog-popup, #beastlog-full, #beastlog-bubble, #beastlog-console *, #beastlog-popup *, #beastlog-full * { -webkit-tap-highlight-color: transparent; font-synthesis: none; font-weight: normal; }
+#beastlog-console *, #beastlog-popup *, #beastlog-full * { text-rendering: optimizeSpeed; }
 #beastlog-console button, #beastlog-popup button, #beastlog-full button, .bl-sw, .bl-acc-head, .bl-tk-head, .bl-dex-head { touch-action: manipulation; }
 .num { font-family: 'Galmuri11', monospace; }
 
@@ -28,6 +29,10 @@
 .bl-topbar { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-bottom: 3px solid var(--bl-edge); background: var(--bl-point); touch-action: none; cursor: move; }
 .bl-grip { font-family: var(--bl-chrome); font-size: 12px; color: #7A5C2C; letter-spacing: -1px; }
 .bl-title { font-family: var(--bl-chrome); font-size: 12px; color: #4A3C24; }
+.bl-min, .bl-up { font-size: 15px; cursor: pointer; line-height: 1; padding: 2px 3px; }
+.bl-min { color: #7A5C2C; }
+#beastlog-bubble { width: 52px; height: 52px; border-radius: 50%; background: var(--bl-point); border: 3px solid var(--bl-edge); box-shadow: 2px 3px 0 var(--bl-shadow); display: flex; align-items: center; justify-content: center; font-size: 26px; cursor: pointer; animation: bl-bob 2.4s ease-in-out infinite; }
+#beastlog-bubble:active { transform: scale(.92); }
 .bl-spacer { flex: 1; }
 .bl-inject { display: flex; align-items: center; gap: 5px; background: var(--bl-card2); border: 2px solid var(--bl-edge); padding: 2px 6px; border-radius: 8px; }
 .bl-lab { font-size: 11px; }
@@ -209,8 +214,10 @@
 .bl-dex-row b { color: var(--bl-ink); }
 .bl-dex-mem { font-size: 11.5px; color: var(--bl-ink); margin-top: 6px; line-height: 1.5; }
 .bl-dim { color: var(--bl-ink-soft); }
-.bl-dex-rename { margin-top: 9px; font-family: var(--bl-chrome); font-size: 10px; padding: 7px 10px; border: 2px solid var(--bl-edge); background: var(--bl-card2); border-radius: 8px; cursor: pointer; }
-.bl-dex-rename:active { transform: translate(1px,1px); box-shadow: none; }
+.bl-dex-btns { display: flex; gap: 6px; margin-top: 9px; }
+.bl-dex-rename { font-family: var(--bl-chrome); font-size: 10px; padding: 7px 10px; border: 2px solid var(--bl-edge); background: var(--bl-card2); border-radius: 8px; cursor: pointer; }
+.bl-dex-rename:active, .bl-dex-del:active { transform: translate(1px,1px); box-shadow: none; }
+.bl-dex-del { font-family: var(--bl-chrome); font-size: 10px; padding: 7px 10px; border: 2px solid #C99; background: #FBEEEE; color: #A55; border-radius: 8px; cursor: pointer; }
 .bl-dex-log { margin-top: 9px; border-top: 1px dashed var(--bl-line); padding-top: 8px; }
 .bl-dex-logttl { font-family: var(--bl-chrome); font-size: 10px; color: var(--bl-point-d); margin-bottom: 5px; }
 .bl-dex-logrow { font-family: var(--bl-prose); font-size: 11px; color: #6E5A38; line-height: 1.6; padding-left: 2px; }
