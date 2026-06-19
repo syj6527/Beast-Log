@@ -1,7 +1,7 @@
-// 🐯 비스트로그 (Beast Log) v0.35.0-beta — 🎯 퀘스트 시스템: RP 세계관 맞춤 목표+보상(돈/아이템/{{char}}의 비밀) 생성, 최대3개, 완료확인은 최근 RP를 LLM이 판정(주입 없음, RP가 열쇠), 알아낸 비밀 수집
+// 🐯 비스트로그 (Beast Log) v0.36.0-beta — 퀘스트 성공/실패 둘 다 데드팬 팝업 + 보상명 '누군가의 비밀/정체불명의 선물' + 밥주기 팝업화 + flash 인라인 스타일로(ST CSS가 덮어써서 토스트 안 뜨던 것 수정)
 // 버전 3곳 동시 갱신: (1) 이 주석, (2) BEASTLOG_VERSION, (3) manifest.json
 
-const BEASTLOG_VERSION = '0.35.0';
+const BEASTLOG_VERSION = '0.36.0';
 const MODULE = 'beast_log';
 let LAST_ERROR = '';
 try { console.log('[비스트로그] script loaded v' + BEASTLOG_VERSION); } catch (e) { /* noop */ }
@@ -214,12 +214,12 @@ function deleteJob(id) { STATE.jobs = (STATE.jobs || []).filter(j => j.id !== id
 function clearJobs() { showConfirm('알바 내역 비우기', '알바 기록을 전부 지울까요? (돈은 그대로)', () => { STATE.jobs = []; STATE.lastJob = null; saveState(STATE); renderAll(); }); }
 const FEED_FOOD = ['편의점 삼각김밥', '길에서 주운 붕어빵', '유통기한 임박 소시지', '수상한 통조림', '사장이 남긴 식은 치킨', '정체불명의 사료', '눅눅한 새우깡', '반쯤 녹은 아이스크림', '누가 흘린 호두과자'];
 function onFeed() {
-    if (STATE.hunger >= 5 && STATE.hp >= 5 && STATE.mood >= 5) { flash('이미 배부르고 쌩쌩하다'); return; }
+    if (STATE.hunger >= 5 && STATE.hp >= 5 && STATE.mood >= 5) { showNote('🍖 밥 주기', '이미 배부르고 쌩쌩하다', '더는 못 먹겠다는 표정으로 고개를 돌린다.'); return; }
     STATE.hunger = clamp05((STATE.hunger || 0) + 2);
     STATE.hp = clamp05((STATE.hp || 0) + 1);
     STATE.mood = clamp05((STATE.mood || 0) + 1);
     saveState(STATE); renderAll();
-    flash(`🍖 '${pick(FEED_FOOD)}'을(를) 먹였다`);
+    showNote('🍖 밥 주기', `'${pick(FEED_FOOD)}'`, pick(FEED_LINE));
 }
 function resetMoney() { showConfirm('돈 리셋', `보유 금액 ${fmtMoney(STATE.money)}을(를) 0원으로 되돌릴까요?`, () => { STATE.money = 0; saveState(STATE); renderAll(); flash('💰 0원으로 리셋'); }); }
 
@@ -253,7 +253,7 @@ async function onCheckQuest(id) {
         const txt = await llmGenerate(buildQuestCheckPrompt(q), 1024);
         closePopup(); const r = parseLLMJson(txt) || {};
         if (r.done) completeQuest(q, r.secret);
-        else flash(`아직이야 — ${String(r.reason || '조건 미달').slice(0, 40)}`);
+        else showQuestFail(q, String(r.reason || '').slice(0, 50));
     } catch (err) { closePopup(); if (!handleLlmError(err)) flash('확인 실패, 다시 시도'); }
     finally { _blBusy = false; }
 }
@@ -264,16 +264,47 @@ function completeQuest(q, secretText) {
     else { const sec = String(secretText || '…사실 별 거 아니었다').slice(0, 140); STATE.secrets = STATE.secrets || []; STATE.secrets.unshift({ id: cryptoId(), text: sec, goal: q.goal, time: nowHHMM() }); if (STATE.secrets.length > 50) STATE.secrets.length = 50; rewardMsg = `🔒 ${sec}`; }
     STATE.quests = (STATE.quests || []).filter(x => x.id !== q.id);
     saveState(STATE); renderAll();
-    showQuestDone(q, rewardMsg);
+    showQuestDone(q, rewardMsg, q.rewardType === 'secret' ? 'secret' : '');
 }
-function showQuestDone(q, rewardMsg) {
+const QUEST_DONE_LINE = ['해냈다. 별 거 아니라는 듯 굴지만 티가 난다.', '목표 달성. 세상에 흔적 하나 남겼다.', '됐다. 의외로 쉬웠다는 표정이다.', '클리어. 보상은 챙겨야지.', '성공. 누가 봤든 안 봤든 한 건 한 거다.'];
+const QUEST_FAIL_LINE = ['김칫국부터 마셨다.', '아직 멀었다. 다시 가서 제대로 해와라.', '그 정도로는 어림도 없다.', '눈썹을 치켜올린다. 인정 못 하겠다는 거다.', '성에 안 찬다는 표정이다.'];
+const FEED_LINE = ['우걱우걱. 순식간에 사라졌다.', '맛있는지는 모르겠지만 일단 먹었다.', '받아먹고는 더 없냐는 눈으로 쳐다본다.', '질보다 양이라는 듯 흡입했다.', '한 입에 털어넣고 만족한 표정이다.', '의심스럽게 냄새를 맡더니, 결국 먹었다.'];
+function showNote(badge, title, body, tone) {
     closePopup();
     const pop = document.createElement('div'); pop.id = 'beastlog-popup';
     pop.innerHTML = `
       <div class="bl-pop-card bl-cat-npc">
-        <div class="bl-pop-badge">🎯 퀘스트 완료</div>
-        <div class="bl-pop-title">${q.emoji} ${escapeHtml(q.goal)}</div>
-        <div class="bl-quest-reward${q.rewardType === 'secret' ? ' secret' : ''}">${escapeHtml(rewardMsg)}</div>
+        <div class="bl-pop-badge">${escapeHtml(badge)}</div>
+        ${title ? `<div class="bl-pop-title">${escapeHtml(title)}</div>` : ''}
+        ${body ? `<div class="bl-note-body${tone ? ' ' + tone : ''}">${escapeHtml(body)}</div>` : ''}
+        <button class="bl-pop-ignore bl-result-ok">확인</button>
+      </div>`;
+    mountPopup(pop, true);
+    pop.querySelector('.bl-result-ok').addEventListener('click', closePopup);
+}
+function showQuestDone(q, rewardMsg, tone) {
+    closePopup();
+    const pop = document.createElement('div'); pop.id = 'beastlog-popup';
+    pop.innerHTML = `
+      <div class="bl-pop-card bl-cat-npc">
+        <div class="bl-pop-badge">🎯 퀘스트 성공</div>
+        <div class="bl-pop-title">${q.emoji || '🎯'} ${escapeHtml(q.goal)}</div>
+        <div class="bl-note-body">${escapeHtml(pick(QUEST_DONE_LINE))}</div>
+        <div class="bl-quest-reward${tone === 'secret' ? ' secret' : ''}">${escapeHtml(rewardMsg)}</div>
+        <button class="bl-pop-ignore bl-result-ok">확인</button>
+      </div>`;
+    mountPopup(pop, true);
+    pop.querySelector('.bl-result-ok').addEventListener('click', closePopup);
+}
+function showQuestFail(q, reason) {
+    closePopup();
+    const pop = document.createElement('div'); pop.id = 'beastlog-popup';
+    const why = reason ? `“${reason}”\n` : '';
+    pop.innerHTML = `
+      <div class="bl-pop-card bl-cat-situation">
+        <div class="bl-pop-badge">🎯 아직이야</div>
+        <div class="bl-pop-title">${q.emoji || '🎯'} ${escapeHtml(q.goal)}</div>
+        <div class="bl-note-body">${escapeHtml(why + pick(QUEST_FAIL_LINE))}</div>
         <button class="bl-pop-ignore bl-result-ok">확인</button>
       </div>`;
     mountPopup(pop, true);
@@ -1244,8 +1275,8 @@ function tkLabel(e) {
 }
 function questRewardBadge(q) {
     if (q.rewardType === 'money') return `<span class="bl-q-reward">💰 ${fmtMoney(q.reward)}</span>`;
-    if (q.rewardType === 'item') return `<span class="bl-q-reward">🎁 ${escapeHtml(q.reward)}</span>`;
-    return `<span class="bl-q-reward secret">🔒 ${escapeHtml('{{char}}')}의 비밀</span>`;
+    if (q.rewardType === 'item') return `<span class="bl-q-reward gift">🎁 정체불명의 선물</span>`;
+    return `<span class="bl-q-reward secret">🔒 누군가의 비밀</span>`;
 }
 function renderQuests() {
     if (!fullEl) return;
@@ -1583,9 +1614,20 @@ function showAlarm(title, msg) {
 let flashTimer = null;
 function flash(msg) {
     let f = document.getElementById('bl-flash-toast');
-    if (!f) { f = document.createElement('div'); f.id = 'bl-flash-toast'; f.className = 'bl-flash'; (document.documentElement || document.body).appendChild(f); }
-    f.textContent = msg; f.classList.add('show');
-    clearTimeout(flashTimer); flashTimer = setTimeout(() => f.classList.remove('show'), 1900);
+    if (!f) {
+        f = document.createElement('div'); f.id = 'bl-flash-toast';
+        Object.assign(f.style, {
+            position: 'fixed', left: '50%', bottom: '90px', transform: 'translateX(-50%)',
+            background: 'rgba(42,46,64,.96)', color: '#fff', fontFamily: "'Galmuri11', monospace",
+            fontSize: '12px', lineHeight: '1.4', maxWidth: '82vw', textAlign: 'center',
+            padding: '10px 16px', borderRadius: '12px', zIndex: '2147483646',
+            boxShadow: '0 6px 18px rgba(0,0,0,.35)', pointerEvents: 'none',
+            opacity: '0', transition: 'opacity .2s ease', whiteSpace: 'normal',
+        });
+        (document.documentElement || document.body).appendChild(f);
+    }
+    f.textContent = msg; f.style.opacity = '1';
+    clearTimeout(flashTimer); flashTimer = setTimeout(() => { if (f) f.style.opacity = '0'; }, 1900);
 }
 function escapeHtml(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

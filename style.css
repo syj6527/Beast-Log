@@ -205,6 +205,9 @@
 .bl-secret-meta { color: var(--bl-ink-soft); font-size: 9.5px; }
 .bl-quest-reward { text-align: center; font-family: var(--bl-chrome); font-size: 13px; color: #C2702A; background: var(--bl-card2); border: 2px dashed var(--bl-edge); border-radius: 10px; padding: 13px 12px; margin: 6px 0 12px; line-height: 1.5; }
 .bl-quest-reward.secret { color: #8A5AA8; font-family: var(--bl-prose); font-size: 12px; }
+.bl-note-body { font-family: var(--bl-prose); font-size: 12px; line-height: 1.55; color: var(--bl-ink); text-align: center; margin: 4px 0 12px; white-space: pre-line; }
+.bl-note-body.secret { color: #8A5AA8; }
+.bl-q-reward.gift { color: #6B8E4E; }
 .bl-job-row { position: relative; background: var(--bl-card); border: 2px solid var(--bl-line); border-radius: 9px; padding: 9px 10px; margin-bottom: 7px; }
 .bl-job-rmain { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding-right: 22px; }
 .bl-job-rttl { font-family: var(--bl-chrome); font-size: 10.5px; color: var(--bl-point-d); }
