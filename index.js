@@ -1,7 +1,7 @@
-// 🐯 비스트로그 (Beast Log) v0.25.0 — 양방향 관계 트랙(익숙함↔피함, 수치 숨김) + 장소 태그 + 조건부 기억 주입(현재 장면 장소 맞을 때만 회상) + 관계 반영 결과
+// 🐯 비스트로그 (Beast Log) v0.26.0 — 알바/돈/상점 경제 v1: {{char}} 맥락맞춤 알바→💰(짜게)→상점서 새 동물 구매. 마스코트 보유제(시작 3종) + 데드팬 알바 후기
 // 버전 3곳 동시 갱신: (1) 이 주석, (2) BEASTLOG_VERSION, (3) manifest.json
 
-const BEASTLOG_VERSION = '0.25.0';
+const BEASTLOG_VERSION = '0.26.0';
 const MODULE = 'beast_log';
 let LAST_ERROR = '';
 try { console.log('[비스트로그] script loaded v' + BEASTLOG_VERSION); } catch (e) { /* noop */ }
@@ -131,6 +131,91 @@ function relTierObj(aff) { for (const t of REL_TIERS) { if (aff >= t.min) return
 function relTier(aff) { return relTierObj(aff).label; }
 function affinityDelta(kind) { return ({ help: 2, cooperate: 3, activity: 1, interact: 0, loot: 0, flee: 0, attack: -2 })[kind] || 0; }
 
+// ── 알바 / 돈 / 상점 ──
+const MASCOT_PRICE = { tiger: 0, cat: 0, dog: 0, hamster: 380000, chick: 520000 };
+const JOB_LOAD = ['알바 뛰는 중…', '시급 계산 중…', '사장님 눈치 보는 중…', '진상 응대 중…', '허드렛일 처리 중…'];
+function ownsMascot(k) { return (STATE.owned || []).includes(k); }
+function fmtMoney(n) { return (n || 0).toLocaleString('ko-KR') + '원'; }
+function jobRemaining() { return Math.max(0, (EXT.cooldownTurns || 0) - (getChatLen() - (STATE.lastJobTurn == null ? -99 : STATE.lastJobTurn))); }
+function canWork() { return jobRemaining() <= 0; }
+function buildJobPrompt() {
+    return `너는 RP 주인공({{char}})이 잠깐 뛴 "알바"와 그 결과를 만든다.
+${getScene()}규칙:
+- {{char}}의 세계/처지에 맞는 알바를 골라라. 판타지면 용병·약초 채집·여관 설거지, 현대면 편의점·전단지, SF면 화물 하역 등. 장면에서 끌어내라. 세계관에 안 맞는 알바 금지(판타지에 편의점 X).
+- 데드팬 코미디. 짧은 알바 후기 한 편.
+- 보수는 짜다(현실 알바처럼 적게). 단위는 정수 '원' 환산값으로 pay에 넣어라(대략 20000~90000, 사건 나면 더 적거나 0).
+- 가끔(30%) 사건/사고(incident)로 보수가 깎이거나 황당한 일.
+형식(JSON만, 코드펜스 금지): {"job":"알바 이름/장소","report":"2~3문장 데드팬 후기","pay":정수,"incident":"한 줄 사건 또는 null","mood":"{{char}}의 한 줄 소감"}
+[대화 맥락]
+${getConvo()}`;
+}
+function normalizeJob(o) {
+    o = o || {};
+    let pay = parseInt(o.pay, 10); if (!Number.isFinite(pay)) pay = 30000;
+    pay = Math.max(0, Math.min(200000, pay));
+    return {
+        job: String(o.job || '이름 모를 알바').slice(0, 40),
+        report: String(o.report || '시간만 흘렀다.').slice(0, 400),
+        pay,
+        incident: (o.incident && o.incident !== 'null') ? String(o.incident).slice(0, 160) : null,
+        mood: (o.mood && o.mood !== 'null') ? String(o.mood).slice(0, 120) : '',
+    };
+}
+async function onWork() {
+    if (!canWork()) { flash(`아직 지쳤다 — ${jobRemaining()}턴 쉬어야`); return; }
+    showLoading(pick(JOB_LOAD));
+    try {
+        const txt = await llmGenerate(buildJobPrompt(), 4096);
+        closePopup(); applyJob(normalizeJob(parseLLMJson(txt)));
+    } catch (err) { closePopup(); if (!handleLlmError(err)) applyJob({ job: '벽돌 나르기', report: '허리만 나갔다. 사장은 어디론가 사라졌다.', pay: 15000, incident: '사장 잠적', mood: '...' }); }
+}
+function applyJob(job) {
+    STATE.money = (STATE.money || 0) + job.pay;
+    STATE.lastJob = job;
+    STATE.lastJobTurn = getChatLen();
+    STATE.hunger = clamp03((STATE.hunger == null ? 3 : STATE.hunger) - 1);
+    saveState(STATE); renderAll();
+    showJobResult(job);
+}
+function buyMascot(k) {
+    if (!MASCOTS[k]) return;
+    if (ownsMascot(k)) { EXT.mascot = k; saveExt(); renderAll(); flash('이미 보유 — 선택됨'); return; }
+    const price = MASCOT_PRICE[k] || 0;
+    if ((STATE.money || 0) < price) { flash(`💸 ${fmtMoney(price - (STATE.money || 0))} 모자람`); return; }
+    showConfirm('데려오기', `${MASCOTS[k].label}을(를) ${fmtMoney(price)}에 데려올까요?`, () => {
+        STATE.money -= price;
+        STATE.owned = Array.from(new Set([...(STATE.owned || []), k]));
+        EXT.mascot = k; saveExt(); saveState(STATE); renderAll();
+        flash(`🏪 ${MASCOTS[k].label} 데려옴!`);
+    });
+}
+function shopListHtml() {
+    return MASCOT_KEYS.map(k => {
+        const owned = ownsMascot(k), price = MASCOT_PRICE[k] || 0, cur = EXT.mascot === k;
+        let right;
+        if (cur) right = '<span class="bl-shop-cur">사용중</span>';
+        else if (owned) right = `<button class="bl-shop-buy" data-m="${k}">선택</button>`;
+        else right = `<button class="bl-shop-buy${(STATE.money || 0) >= price ? '' : ' off'}" data-m="${k}">💰 ${fmtMoney(price)}</button>`;
+        return `<div class="bl-shop-row${cur ? ' on' : ''}">${spriteSVG(k, 34, EXT.spriteMono === true)}<span class="bl-shop-nm">${MASCOTS[k].label}</span>${right}</div>`;
+    }).join('');
+}
+function showJobResult(job) {
+    closePopup();
+    const pop = document.createElement('div'); pop.id = 'beastlog-popup';
+    pop.innerHTML = `
+      <div class="bl-pop-card bl-cat-npc">
+        <div class="bl-pop-badge">🛠️ 알바 후기</div>
+        <div class="bl-pop-title">${escapeHtml(job.job)}</div>
+        <div class="bl-job-report">${escapeHtml(job.report)}</div>
+        ${job.incident ? `<div class="bl-af-rare">⚠️ ${escapeHtml(job.incident)}</div>` : ''}
+        <div class="bl-job-pay">💰 +${fmtMoney(job.pay)}</div>
+        ${job.mood ? `<div class="bl-job-mood">💭 ${escapeHtml(job.mood)}</div>` : ''}
+        <button class="bl-pop-ignore bl-result-ok">확인 · 보유 💰 ${fmtMoney(STATE.money)}</button>
+      </div>`;
+    mountPopup(pop);
+    pop.querySelector('.bl-result-ok').addEventListener('click', closePopup);
+}
+
 // ── 로딩/후일담 풀 ──
 const LOAD_APPEAR = ['두리번거리는 중...', '킁킁 냄새 맡는 중...', '골목을 기웃거리는 중...', '수상한 기척을 쫓는 중...', '풀숲을 헤집는 중...', '누군가 다가오는 중...', '뭔가 어슬렁대는 중...', '주변을 살피는 중...', '발소리를 듣는 중...', '고개를 갸웃하는 중...', '냄새의 출처를 찾는 중...'];
 const LOAD_SIT = ['바람 냄새 맡는 중...', '하늘을 올려다보는 중...', '공기가 바뀌는 걸 느끼는 중...', '낌새를 살피는 중...', '뭔가 다가오는 중...', '분위기를 재는 중...', '먹구름을 보는 중...', '이상한 예감이 드는 중...', '곤란한 일이 다가오는 중...'];
@@ -158,6 +243,7 @@ function defaultState() {
         mood: 3, hunger: 3, hp: 3,
         items: [], encounters: [], npcs: {},
         currentNpc: null, currentSituation: null,
+        money: 0, owned: ['tiger', 'cat', 'dog'], lastJobTurn: -99, lastJob: null,
         lastInjectTurn: -99, settings: { injectDefault: true },
     };
 }
@@ -534,8 +620,8 @@ function syncControls() {
         const fm = fullEl.querySelector('.bl-t-mono'); if (fm) fm.checked = EXT.spriteMono === true;
     }
 }
-function pickMascot(key) { if (MASCOTS[key]) { EXT.mascot = key; saveExt(); renderAll(); } }
-function cycleMascot() { const i = MASCOT_KEYS.indexOf(EXT.mascot); EXT.mascot = MASCOT_KEYS[(i + 1) % MASCOT_KEYS.length]; saveExt(); renderAll(); }
+function pickMascot(key) { if (MASCOTS[key] && ownsMascot(key)) { EXT.mascot = key; saveExt(); renderAll(); } }
+function cycleMascot() { const owned = MASCOT_KEYS.filter(ownsMascot); if (!owned.length) return; const i = owned.indexOf(EXT.mascot); EXT.mascot = owned[(i + 1) % owned.length]; saveExt(); renderAll(); }
 function pips(emoji, n) { return emoji.repeat(Math.max(0, n)) + '·'.repeat(Math.max(0, 3 - n)); }
 function npcLine() {
     if (!STATE.currentNpc || !STATE.npcs[STATE.currentNpc]) return '<span class="bl-slot-empty">아무도 없음</span>';
@@ -716,7 +802,7 @@ function buildFull() {
               <span class="bl-st">체력 <b class="bl-st-hp"></b></span>
             </div>
             <div class="bl-pet-xptext num"></div><div class="bl-pet-xpbar"><i></i></div>
-            <div class="bl-pet-stats">⭐ 평판 <b class="num bl-pet-rep"></b> · 🎒 <b class="num bl-pet-items"></b> · 칭호 <span class="bl-pet-title"></span></div>
+            <div class="bl-pet-stats">⭐ <b class="num bl-pet-rep"></b> · 💰 <b class="num bl-pet-money"></b> · 🎒 <b class="num bl-pet-items"></b> · <span class="bl-pet-title"></span></div>
             <div class="bl-pet-pick"></div>
           </div>
           <div class="bl-slots">
@@ -738,10 +824,20 @@ function buildFull() {
           </div>
           </div>
           <div class="bl-tab-panel" data-panel="work" hidden>
-            <div class="bl-soon"><div class="bl-soon-emoji">🛠️</div><b>알바</b><p>곧 열려요. RP 캐릭터를 알바 보내서 돈을 법니다.<br>(돈 벌기 빡셀 예정 ㅋㅋ)</p></div>
+            <div class="bl-work">
+              <div class="bl-money-bar">보유 <b class="num bl-work-money">0원</b></div>
+              <button class="bl-work-go">🛠️ 알바 뛰기</button>
+              <div class="bl-work-cd"></div>
+              <div class="bl-work-last"></div>
+              <div class="bl-work-tip">RP 주인공이 세계관에 맞는 알바를 뜀. 보수는 짜다. 가끔 사건 터짐. (알바하면 살짝 배고파짐)</div>
+            </div>
           </div>
           <div class="bl-tab-panel" data-panel="shop" hidden>
-            <div class="bl-soon"><div class="bl-soon-emoji">🏪</div><b>상점</b><p>곧 열려요. 알바로 번 돈으로<br>새 동물을 데려올 수 있게 됩니다.</p></div>
+            <div class="bl-shop">
+              <div class="bl-money-bar">보유 <b class="num bl-shop-money">0원</b></div>
+              <div class="bl-shop-list"></div>
+              <div class="bl-work-tip">알바로 번 돈으로 새 동물을 데려와요. 시작 3종(호랑이·고양이·강아지)은 무료, 나머지는 구매.</div>
+            </div>
           </div>
           <div class="bl-tab-panel" data-panel="set" hidden>
             <div class="bl-full-toggles">
@@ -775,6 +871,8 @@ function buildFull() {
     fullEl.querySelector('.bl-dex-clear').addEventListener('click', e => { e.stopPropagation(); clearNpcs(); });
     fullEl.querySelector('.bl-bag-clear').addEventListener('click', e => { e.stopPropagation(); clearItems(); });
     fullEl.querySelector('.bl-pet-pick').addEventListener('click', e => { const b = e.target.closest('.bl-pick-btn'); if (b) pickMascot(b.dataset.m); });
+    fullEl.querySelector('.bl-work-go').addEventListener('click', onWork);
+    fullEl.querySelector('.bl-shop-list').addEventListener('click', e => { const b = e.target.closest('.bl-shop-buy'); if (b) buyMascot(b.dataset.m); });
     fullEl.querySelector('.bl-enc-list').addEventListener('click', e => {
         const rev = e.target.closest('.bl-reveal');
         if (rev) { const en = STATE.encounters.find(x => x.id === rev.dataset.id); if (en) { en.revealed = true; saveState(STATE); renderFull(); } return; }
@@ -860,9 +958,18 @@ function renderFull() {
     fullEl.querySelector('.bl-pet-xptext').textContent = `${STATE.xp} / ${need} XP`;
     fullEl.querySelector('.bl-pet-xpbar i').style.width = Math.min(100, (STATE.xp / need) * 100) + '%';
     fullEl.querySelector('.bl-pet-rep').textContent = (STATE.rep > 0 ? '+' : '') + STATE.rep;
+    fullEl.querySelector('.bl-pet-money').textContent = fmtMoney(STATE.money);
     fullEl.querySelector('.bl-pet-items').textContent = STATE.items.length;
     fullEl.querySelector('.bl-pet-title').textContent = STATE.title;
-    fullEl.querySelector('.bl-pet-pick').innerHTML = MASCOT_KEYS.map(k => `<button class="bl-pick-btn${EXT.mascot === k ? ' on' : ''}" data-m="${k}" title="${MASCOTS[k].label}">${spriteSVG(k, 26, EXT.spriteMono === true)}</button>`).join('');
+    // 알바 탭
+    const wm = fullEl.querySelector('.bl-work-money'); if (wm) wm.textContent = fmtMoney(STATE.money);
+    const wcd = fullEl.querySelector('.bl-work-cd'); if (wcd) { const r = jobRemaining(); wcd.textContent = r > 0 ? `😮‍💨 ${r}턴 더 쉬어야` : '✅ 알바 가능'; }
+    const wl = fullEl.querySelector('.bl-work-last');
+    if (wl) wl.innerHTML = STATE.lastJob ? `<div class="bl-work-lastttl">최근 알바 — ${escapeHtml(STATE.lastJob.job)}</div><div class="bl-work-lastrep">${escapeHtml(STATE.lastJob.report)}${STATE.lastJob.incident ? ' ⚠️ ' + escapeHtml(STATE.lastJob.incident) : ''} <b>(+${fmtMoney(STATE.lastJob.pay)})</b></div>` : '';
+    // 상점 탭
+    const sm = fullEl.querySelector('.bl-shop-money'); if (sm) sm.textContent = fmtMoney(STATE.money);
+    const sl = fullEl.querySelector('.bl-shop-list'); if (sl) sl.innerHTML = shopListHtml();
+    fullEl.querySelector('.bl-pet-pick').innerHTML = MASCOT_KEYS.filter(ownsMascot).map(k => `<button class="bl-pick-btn${EXT.mascot === k ? ' on' : ''}" data-m="${k}" title="${MASCOTS[k].label}">${spriteSVG(k, 26, EXT.spriteMono === true)}</button>`).join('');
     fullEl.querySelector('.bl-sit-v').innerHTML = sitLine();
     fullEl.querySelector('.bl-npc-v').innerHTML = npcLine();
     fullEl.querySelector('.bl-t-inject').checked = STATE.settings.injectDefault;

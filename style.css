@@ -134,6 +134,27 @@
 .bl-soon-emoji { font-size: 40px; margin-bottom: 10px; }
 .bl-soon b { font-family: var(--bl-chrome); font-size: 13px; color: var(--bl-ink); display: block; margin-bottom: 10px; }
 .bl-soon p { font-size: 12px; line-height: 1.6; }
+.bl-money-bar { font-family: var(--bl-chrome); font-size: 12px; text-align: center; color: var(--bl-point-d); background: var(--bl-card); border: 2px solid var(--bl-line); border-radius: 9px; padding: 9px; margin-bottom: 10px; }
+.bl-money-bar b { color: var(--bl-ink); }
+.bl-work-go { display: block; width: 100%; font-family: var(--bl-chrome); font-size: 13px; color: #4A3C24; background: var(--bl-point); border: 2px solid var(--bl-edge); border-radius: 11px; padding: 13px; cursor: pointer; box-shadow: 2px 3px 0 var(--bl-shadow); }
+.bl-work-go:active { transform: translate(1px,2px); box-shadow: 1px 1px 0 var(--bl-shadow); }
+.bl-work-cd { text-align: center; font-size: 11px; color: var(--bl-ink-soft); margin: 8px 0; }
+.bl-work-last { background: var(--bl-card); border: 2px solid var(--bl-line); border-radius: 9px; padding: 10px; margin-top: 4px; }
+.bl-work-last:empty { display: none; }
+.bl-work-lastttl { font-family: var(--bl-chrome); font-size: 10px; color: var(--bl-point-d); margin-bottom: 4px; }
+.bl-work-lastrep { font-size: 12px; line-height: 1.5; }
+.bl-work-tip { font-size: 10px; color: var(--bl-ink-soft); line-height: 1.5; margin-top: 12px; text-align: center; }
+.bl-shop-list { display: flex; flex-direction: column; gap: 8px; }
+.bl-shop-row { display: flex; align-items: center; gap: 10px; background: var(--bl-card); border: 2px solid var(--bl-line); border-radius: 10px; padding: 8px 11px; }
+.bl-shop-row.on { border-color: var(--bl-point-d); background: var(--bl-btn); }
+.bl-shop-nm { flex: 1; font-size: 13px; font-family: var(--bl-chrome); }
+.bl-shop-buy { font-family: var(--bl-chrome); font-size: 11px; color: #4A3C24; background: var(--bl-point); border: 2px solid var(--bl-edge); border-radius: 8px; padding: 7px 11px; cursor: pointer; }
+.bl-shop-buy.off { opacity: .45; }
+.bl-shop-buy:active { transform: translate(1px,1px); }
+.bl-shop-cur { font-family: var(--bl-chrome); font-size: 10px; color: var(--bl-point-d); padding: 0 6px; }
+.bl-job-report { font-size: 13px; line-height: 1.6; margin: 6px 0; }
+.bl-job-pay { font-family: var(--bl-chrome); font-size: 15px; color: #C2702A; text-align: center; margin: 10px 0; }
+.bl-job-mood { font-size: 12px; color: var(--bl-ink-soft); font-style: italic; text-align: center; }
 
 /* 펫 카드 (마스코트 둥둥) */
 .bl-pet-card { background: var(--bl-card2); border: 2px solid var(--bl-line); border-radius: 12px; padding: 12px; text-align: center; }
