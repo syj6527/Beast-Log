@@ -1,7 +1,7 @@
-// 🐯 비스트로그 (Beast Log) v0.34.0-beta — 레벨 양방향(XP 깎이면 다운) + 스탯 0~5 확장 + 🍖밥주기(채움) + 출현·알바 텀 랜덤2~4(텀입력 제거) + 테마명 변경(민트→말차/딸기우유→벚꽃)
+// 🐯 비스트로그 (Beast Log) v0.35.0-beta — 🎯 퀘스트 시스템: RP 세계관 맞춤 목표+보상(돈/아이템/{{char}}의 비밀) 생성, 최대3개, 완료확인은 최근 RP를 LLM이 판정(주입 없음, RP가 열쇠), 알아낸 비밀 수집
 // 버전 3곳 동시 갱신: (1) 이 주석, (2) BEASTLOG_VERSION, (3) manifest.json
 
-const BEASTLOG_VERSION = '0.34.0';
+const BEASTLOG_VERSION = '0.35.0';
 const MODULE = 'beast_log';
 let LAST_ERROR = '';
 try { console.log('[비스트로그] script loaded v' + BEASTLOG_VERSION); } catch (e) { /* noop */ }
@@ -153,6 +153,25 @@ ${getScene()}규칙:
 [대화 맥락]
 ${getConvo()}`;
 }
+function buildQuestPrompt() {
+    return `너는 RP 주인공({{char}})에게 줄 "퀘스트"(목표+보상)를 하나 만든다.
+${getScene()}규칙:
+- 목표(goal)는 이 RP 안에서 {{char}}/유저의 행동·대사로 달성 가능한 것이어야 한다. 시스템이 강제하는 게 아니라, 두 사람이 대화하다 보면 일어날 법한 일.
+  예: "{{char}}에게 바보라고 불리기", "{{char}}를 한 번 웃기기", "같이 길거리 셀카 찍기", "{{char}}가 먼저 손 잡게 만들기". 세계관/분위기에 맞게.
+- 너무 거창하거나 추상적인 거(세계 구하기 등) 금지. 한 장면~몇 턴 안에 자연스럽게 달성될 소소한 것.
+- 데드팬/엉뚱한 유머. 한국어.
+- 보상(rewardType): 대부분 "money"(1만~10만원). 가끔 "item"(엉뚱한 물건). 관계·감정이 얽힌 목표면 가끔 "secret"({{char}}의 의외의 비밀 — 달성하면 공개됨).
+형식(JSON만, 코드펜스 금지): {"goal":"목표 한 줄","emoji":"목표 이모지 하나","rewardType":"money|item|secret","reward":money면 정수·item이면 "물건이름"·secret이면 null}
+[대화 맥락]
+${getConvo()}`;
+}
+function buildQuestCheckPrompt(q) {
+    return `아래 "목표"가 최근 RP 대화에서 실제로 달성됐는지 엄격하게 판정해라. 어설프게 인정하지 말 것 — 정황상 분명히 일어났을 때만 done:true.
+목표: "${q.goal}"
+${getScene()}판정 형식(JSON만): {"done":true 또는 false,"reason":"한 줄 근거","secret":${q.rewardType === 'secret' ? '달성됐다면 이 RP 맥락에 맞는 {{char}}의 의외의 비밀 한 줄, 아니면 null' : 'null'}}
+[대화 맥락]
+${getConvo()}`;
+}
 function normalizeJob(o) {
     o = o || {};
     let pay = parseInt(o.pay, 10); if (!Number.isFinite(pay)) pay = 30000;
@@ -203,6 +222,63 @@ function onFeed() {
     flash(`🍖 '${pick(FEED_FOOD)}'을(를) 먹였다`);
 }
 function resetMoney() { showConfirm('돈 리셋', `보유 금액 ${fmtMoney(STATE.money)}을(를) 0원으로 되돌릴까요?`, () => { STATE.money = 0; saveState(STATE); renderAll(); flash('💰 0원으로 리셋'); }); }
+
+// ── 퀘스트 (RP 읽어 판정, 주입 없음) ──
+const QUEST_MAX = 3;
+function normalizeQuest(o) {
+    o = o || {};
+    let rt = (o.rewardType === 'item' || o.rewardType === 'secret') ? o.rewardType : 'money';
+    let reward = null;
+    if (rt === 'money') { let m = parseInt(o.reward, 10); reward = Number.isFinite(m) ? Math.max(10000, Math.min(100000, m)) : 30000; }
+    else if (rt === 'item') { reward = String(o.reward || '수상한 물건').slice(0, 30); }
+    return { id: cryptoId(), goal: String(o.goal || '뭔가 해내기').slice(0, 80), emoji: String(o.emoji || '🎯').slice(0, 4), rewardType: rt, reward, time: nowHHMM() };
+}
+async function onNewQuest() {
+    if (_blBusy) return;
+    if ((STATE.quests || []).length >= QUEST_MAX) { flash(`퀘스트는 최대 ${QUEST_MAX}개까지`); return; }
+    _blBusy = true; showLoading('퀘스트 받는 중…');
+    try {
+        const txt = await llmGenerate(buildQuestPrompt(), 2048);
+        closePopup(); addQuest(normalizeQuest(parseLLMJson(txt)));
+    } catch (err) { closePopup(); if (!handleLlmError(err)) addQuest(normalizeQuest({ goal: '{{char}} 한 번 웃기기', emoji: '😄', rewardType: 'money', reward: 30000 })); }
+    finally { _blBusy = false; }
+}
+function addQuest(q) { STATE.quests = STATE.quests || []; STATE.quests.unshift(q); saveState(STATE); renderFull(); flash(`🎯 새 퀘스트: ${q.goal}`); }
+function deleteQuest(id) { STATE.quests = (STATE.quests || []).filter(q => q.id !== id); saveState(STATE); renderFull(); }
+async function onCheckQuest(id) {
+    if (_blBusy) return;
+    const q = (STATE.quests || []).find(x => x.id === id); if (!q) return;
+    _blBusy = true; showLoading('달성했는지 확인 중…');
+    try {
+        const txt = await llmGenerate(buildQuestCheckPrompt(q), 1024);
+        closePopup(); const r = parseLLMJson(txt) || {};
+        if (r.done) completeQuest(q, r.secret);
+        else flash(`아직이야 — ${String(r.reason || '조건 미달').slice(0, 40)}`);
+    } catch (err) { closePopup(); if (!handleLlmError(err)) flash('확인 실패, 다시 시도'); }
+    finally { _blBusy = false; }
+}
+function completeQuest(q, secretText) {
+    let rewardMsg = '';
+    if (q.rewardType === 'money') { STATE.money = (STATE.money || 0) + q.reward; rewardMsg = `💰 ${fmtMoney(q.reward)} 획득`; }
+    else if (q.rewardType === 'item') { STATE.items.unshift({ id: cryptoId(), name: q.reward, emoji: '🎁', rarity: 'common', itemType: null, price: 0 }); if (STATE.items.length > 80) STATE.items.length = 80; rewardMsg = `🎁 '${q.reward}' 획득`; }
+    else { const sec = String(secretText || '…사실 별 거 아니었다').slice(0, 140); STATE.secrets = STATE.secrets || []; STATE.secrets.unshift({ id: cryptoId(), text: sec, goal: q.goal, time: nowHHMM() }); if (STATE.secrets.length > 50) STATE.secrets.length = 50; rewardMsg = `🔒 ${sec}`; }
+    STATE.quests = (STATE.quests || []).filter(x => x.id !== q.id);
+    saveState(STATE); renderAll();
+    showQuestDone(q, rewardMsg);
+}
+function showQuestDone(q, rewardMsg) {
+    closePopup();
+    const pop = document.createElement('div'); pop.id = 'beastlog-popup';
+    pop.innerHTML = `
+      <div class="bl-pop-card bl-cat-npc">
+        <div class="bl-pop-badge">🎯 퀘스트 완료</div>
+        <div class="bl-pop-title">${q.emoji} ${escapeHtml(q.goal)}</div>
+        <div class="bl-quest-reward${q.rewardType === 'secret' ? ' secret' : ''}">${escapeHtml(rewardMsg)}</div>
+        <button class="bl-pop-ignore bl-result-ok">확인</button>
+      </div>`;
+    mountPopup(pop, true);
+    pop.querySelector('.bl-result-ok').addEventListener('click', closePopup);
+}
 const DONATE_TO = ['길고양이 급식소', '동네 비둘기 연합', '사장님 외제차 기름값', '익명의 너구리', '폐지 줍는 어르신', '유기견 보호소', '바다거북 구조대', '수상한 종교 단체', '나무 심기 운동', '정체불명의 모금함', '옆자리 다람쥐', '세계 평화 기금'];
 function onDonate() {
     if ((STATE.money || 0) <= 0) { flash('후원할 돈이 없다… 빈손이다'); return; }
@@ -278,7 +354,8 @@ function defaultState() {
         mood: 4, hunger: 4, hp: 5,
         items: [], encounters: [], npcs: {},
         currentNpc: null, currentSituation: null,
-        money: 0, owned: ['tiger', 'cat', 'dog'], lastJobTurn: -99, lastJob: null, jobs: [], jobs: [],
+        money: 0, owned: ['tiger', 'cat', 'dog'], lastJobTurn: -99, lastJob: null, jobs: [],
+        quests: [], secrets: [],
         pins: [],
         lastInjectTurn: -99, settings: { injectDefault: false },
     };
@@ -950,6 +1027,7 @@ function buildFull() {
         <div class="bl-tabs">
           <button class="bl-tab on" data-tab="main">🏠 메인</button>
           <button class="bl-tab" data-tab="work">🛠️ 알바</button>
+          <button class="bl-tab" data-tab="quest">🎯 퀘스트</button>
           <button class="bl-tab" data-tab="shop">🏪 상점</button>
           <button class="bl-tab" data-tab="set">⚙️ 세팅</button>
         </div>
@@ -997,6 +1075,17 @@ function buildFull() {
                 <div class="bl-acc-body"><div class="bl-jobs-list"></div></div>
               </div>
               <div class="bl-work-tip">RP 주인공이 세계관에 맞는 알바를 뜀. 보수는 짜다. 가끔 사건 터짐. (알바하면 살짝 배고파짐)</div>
+            </div>
+          </div>
+          <div class="bl-tab-panel" data-panel="quest" hidden>
+            <div class="bl-quest">
+              <button class="bl-quest-new">🎲 퀘스트 받기</button>
+              <div class="bl-quest-list"></div>
+              <div class="bl-acc bl-secrets-acc collapsed">
+                <div class="bl-acc-head"><h3>🔒 알아낸 비밀</h3><span class="bl-rule"></span><span class="bl-secrets-cnt num"></span><span class="bl-chev">▾</span></div>
+                <div class="bl-acc-body"><div class="bl-secrets-list"></div></div>
+              </div>
+              <div class="bl-work-tip">RP 안에서 목표를 이루면 보상이 떨어져요. 퀘스트는 채팅에 끼어들지 않아요 — 너희가 한 행동·대사를 보고 판정할 뿐. 최대 3개.</div>
             </div>
           </div>
           <div class="bl-tab-panel" data-panel="shop" hidden>
@@ -1055,6 +1144,11 @@ function buildFull() {
     fullEl.querySelector('.bl-work-go').addEventListener('click', onWork);
     fullEl.querySelector('.bl-donate').addEventListener('click', onDonate);
     { const fb = fullEl.querySelector('.bl-feed'); if (fb) fb.addEventListener('click', onFeed); }
+    { const qn = fullEl.querySelector('.bl-quest-new'); if (qn) qn.addEventListener('click', onNewQuest); }
+    { const ql = fullEl.querySelector('.bl-quest-list'); if (ql) ql.addEventListener('click', e => {
+        const c = e.target.closest('.bl-quest-check'); if (c) { onCheckQuest(c.dataset.id); return; }
+        const d = e.target.closest('.bl-quest-del'); if (d) deleteQuest(d.dataset.id);
+    }); }
     fullEl.querySelector('.bl-jobs-clear').addEventListener('click', e => { e.stopPropagation(); clearJobs(); });
     fullEl.querySelector('.bl-jobs-list').addEventListener('click', e => { const b = e.target.closest('.bl-job-del'); if (b) deleteJob(b.dataset.id); });
     fullEl.querySelector('.bl-main-reset').addEventListener('click', resetAll);
@@ -1148,6 +1242,25 @@ function tkLabel(e) {
     const t = stripTags((e && e.title) || '');
     return t.length > 20 ? t.slice(0, 19) + '…' : (t || '조우');
 }
+function questRewardBadge(q) {
+    if (q.rewardType === 'money') return `<span class="bl-q-reward">💰 ${fmtMoney(q.reward)}</span>`;
+    if (q.rewardType === 'item') return `<span class="bl-q-reward">🎁 ${escapeHtml(q.reward)}</span>`;
+    return `<span class="bl-q-reward secret">🔒 ${escapeHtml('{{char}}')}의 비밀</span>`;
+}
+function renderQuests() {
+    if (!fullEl) return;
+    const ql = fullEl.querySelector('.bl-quest-list'); if (!ql) return;
+    const qs = STATE.quests || [];
+    ql.innerHTML = qs.length ? qs.map(q => `
+        <div class="bl-quest-card">
+          <div class="bl-q-top"><span class="bl-q-emoji">${q.emoji || '🎯'}</span><span class="bl-q-goal">${escapeHtml(q.goal)}</span></div>
+          <div class="bl-q-bot">${questRewardBadge(q)}<button class="bl-quest-check" data-id="${q.id}">완료 확인</button><button class="bl-quest-del" data-id="${q.id}" title="포기">🗑️</button></div>
+        </div>`).join('') : '<div class="bl-empty">받은 퀘스트가 없어요. 🎲 퀘스트 받기를 눌러보세요.</div>';
+    const secs = STATE.secrets || [];
+    const sc = fullEl.querySelector('.bl-secrets-cnt'); if (sc) sc.textContent = secs.length + '개';
+    const sl = fullEl.querySelector('.bl-secrets-list');
+    if (sl) sl.innerHTML = secs.length ? secs.map(s => `<div class="bl-secret-row">🔒 <b>${escapeHtml(s.text)}</b>${s.goal ? `<span class="bl-secret-meta"> — ${escapeHtml(s.goal)}</span>` : ''}</div>`).join('') : '<div class="bl-empty">아직 알아낸 비밀이 없어요.</div>';
+}
 function renderFull() {
     if (!fullEl) return;
     const evo = evoStage(STATE.level), need = STATE.level * 100;
@@ -1182,6 +1295,7 @@ function renderFull() {
     fullEl.querySelector('.bl-t-mono').checked = EXT.spriteMono === true;
     fullEl.querySelector('.bl-t-auto').checked = EXT.autoDetect;
     { const ct = EXT.theme || 'pudding'; fullEl.querySelectorAll('.bl-theme-btn').forEach(b => b.classList.toggle('on', b.dataset.theme === ct)); }
+    renderQuests();
 
     fullEl.querySelector('.bl-enc-cnt').textContent = STATE.encounters.length + '건';
     fullEl.querySelector('.bl-enc-list').innerHTML = STATE.encounters.length
@@ -1468,10 +1582,8 @@ function showAlarm(title, msg) {
 
 let flashTimer = null;
 function flash(msg) {
-    const host = (fullEl && fullEl.style.display !== 'none') ? fullEl : consoleEl;
-    if (!host) return;
-    let f = host.querySelector('.bl-flash');
-    if (!f) { f = document.createElement('div'); f.className = 'bl-flash'; host.appendChild(f); }
+    let f = document.getElementById('bl-flash-toast');
+    if (!f) { f = document.createElement('div'); f.id = 'bl-flash-toast'; f.className = 'bl-flash'; (document.documentElement || document.body).appendChild(f); }
     f.textContent = msg; f.classList.add('show');
     clearTimeout(flashTimer); flashTimer = setTimeout(() => f.classList.remove('show'), 1900);
 }
