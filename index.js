@@ -1,9 +1,17 @@
-// 🐯 비스트로그 (Beast Log) v0.39.1-beta — 퀘스트 목표 짤림 수정: 데이터 컷(slice 80→140) + 프롬프트가 목표를 한 문장으로 끝맺게(문단 금지). CSS 아니라 문자열 자체가 80자에서 잘리던 것
+// 🐯 비스트로그 (Beast Log) v0.40.0-beta — 디버그 로그 이스터에그: 세팅 드로어에서 '연결 프로필' 5번 탭→디버그 패널 펼침. LLM 호출/에러 자동 기록(최근40), 설정·상태 스냅샷, 📋복사(모바일 폴백 포함)
 // 버전 3곳 동시 갱신: (1) 이 주석, (2) BEASTLOG_VERSION, (3) manifest.json
 
-const BEASTLOG_VERSION = '0.39.1';
+const BEASTLOG_VERSION = '0.40.0';
 const MODULE = 'beast_log';
 let LAST_ERROR = '';
+const DBG_LOG = [];
+function blLog(tag, detail) {
+    try {
+        const t = (typeof nowHHMM === 'function') ? nowHHMM() : '';
+        DBG_LOG.push(t + ' · ' + tag + (detail != null && detail !== '' ? ' · ' + String(detail).replace(/\s+/g, ' ').slice(0, 140) : ''));
+        if (DBG_LOG.length > 40) DBG_LOG.shift();
+    } catch (e) { /* noop */ }
+}
 try { console.log('[비스트로그] script loaded v' + BEASTLOG_VERSION); } catch (e) { /* noop */ }
 
 function getCtx() {
@@ -585,6 +593,7 @@ function parseLLMJson(text) {
     return JSON.parse(t);
 }
 async function llmGenerate(prompt, maxTokens) {
+    blLog('gen', (prompt || '').replace(/\s+/g, ' ').slice(0, 26));
     const ctx = getCtx();
     const cmrs = ctx && ctx.ConnectionManagerRequestService;
     const profileId = resolveProfile();
@@ -723,6 +732,8 @@ function normalizeOutcome(o, kind) {
 }
 function handleLlmError(err) {
     const code = err && err.code;
+    LAST_ERROR = (err && (err.stack || err.message)) || (code ? 'code:' + code : String(err));
+    blLog('LLM_ERR', code || (err && err.message) || err);
     if (code === 'nogen') return false;
     if (code === 'missing') showAlarm('엇... 고른 연결 프로필이 사라졌어요;;', '설정에서 프로필을 다시 골라주세요.');
     else if (code === 'empty') showAlarm('어어... 응답이 텅 비어서 왔어요;;', '모델이 잠깐 딴짓하나 봐요. 조금 뒤에 다시 눌러주세요.');
@@ -1445,7 +1456,7 @@ function buildSettings(container) {
         <div class="inline-drawer-toggle inline-drawer-header"><b>🐯 비스트로그</b>
           <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div></div>
         <div class="inline-drawer-content">
-          <label class="bls-row"><span>연결 프로필</span><select id="bls-profile" class="text_pole"></select></label>
+          <label class="bls-row"><span class="bls-dbgtap" title="?">연결 프로필</span><select id="bls-profile" class="text_pole"></select></label>
           <label class="bls-row"><span>맥락 깊이</span><select id="bls-depth" class="text_pole">
             <option value="balance">균형 (최근 2개)</option>
             <option value="5">최근 5개</option>
@@ -1454,15 +1465,35 @@ function buildSettings(container) {
             <option value="all">전체</option>
           </select></label>
           <div class="bls-ver">🐯 Beast Log v${BEASTLOG_VERSION} · 확장 메뉴(🪄) 또는 미니창 📖 로 열기</div>
-          <div class="bls-row"><span>🐞 디버그 (콘솔 없이 상태 확인)</span><button id="bls-diag" class="bls-diag-btn">진단 보기</button></div>
-          <pre id="bls-diag-out" class="bls-diag-out" style="display:none"></pre>
+          <div id="bls-dbg" class="bls-dbg" hidden>
+            <div class="bls-dbg-head">🐞 디버그 로그 <span class="bls-dbg-hint">문제 생기면 복사해서 제보용</span></div>
+            <textarea id="bls-dbg-out" class="bls-dbg-out" readonly spellcheck="false"></textarea>
+            <div class="bls-dbg-btns"><button id="bls-dbg-copy" type="button">📋 복사</button><button id="bls-dbg-refresh" type="button">🔄 새로고침</button></div>
+          </div>
         </div>
       </div>`;
     container.appendChild(wrap);
     refreshProfileOptions();
     wrap.querySelector('#bls-profile').addEventListener('change', e => { EXT.connectionProfile = e.target.value; saveExt(); });
-    const dgb = wrap.querySelector('#bls-diag'); const dgo = wrap.querySelector('#bls-diag-out');
-    if (dgb && dgo) dgb.addEventListener('click', () => { dgo.textContent = diagText(); dgo.style.display = 'block'; });
+    // 🐞 이스터에그: 연결 프로필 5번 탭 → 디버그 로그 펼침
+    const tapEl = wrap.querySelector('.bls-dbgtap');
+    const dbg = wrap.querySelector('#bls-dbg');
+    const dbgOut = wrap.querySelector('#bls-dbg-out');
+    let taps = 0, tapTimer = null;
+    if (tapEl && dbg && dbgOut) {
+        tapEl.addEventListener('click', e => {
+            e.preventDefault(); e.stopPropagation();
+            taps++; clearTimeout(tapTimer); tapTimer = setTimeout(() => { taps = 0; }, 1600);
+            if (taps >= 5) {
+                taps = 0; dbg.hidden = !dbg.hidden;
+                if (!dbg.hidden) { dbgOut.value = diagText(); flash('🐞 디버그 로그 열림'); }
+            }
+        });
+        const cp = wrap.querySelector('#bls-dbg-copy');
+        if (cp) cp.addEventListener('click', () => copyDebug(dbgOut.value, dbgOut));
+        const rf = wrap.querySelector('#bls-dbg-refresh');
+        if (rf) rf.addEventListener('click', () => { dbgOut.value = diagText(); flash('🔄 갱신됨'); });
+    }
     const dsel = wrap.querySelector('#bls-depth');
     if (dsel) { dsel.value = EXT.contextDepth || 'balance'; dsel.addEventListener('change', e => { EXT.contextDepth = e.target.value; saveExt(); }); }
     setTimeout(refreshProfileOptions, 1500);
@@ -1694,23 +1725,48 @@ function diag() {
 }
 function diagText() {
     const d = diag();
+    const S = STATE || {};
+    const E = EXT || {};
     return [
-        'Beast Log v' + d.v,
-        '─────────────',
-        'inDom      : ' + d.inDom,
-        'position   : ' + d.pos,
-        'display    : ' + d.disp,
-        'zIndex     : ' + d.z,
-        'rect       : ' + (d.rect ? `${d.rect.w}x${d.rect.h} @(${d.rect.l},${d.rect.t})` : 'null'),
-        'viewport   : ' + d.vp.w + 'x' + d.vp.h,
-        'cssLoaded  : ' + d.cssLoaded,
-        'font(갈무리): ' + d.fontLoaded,
-        'ctx        : ' + (d.ctx ? 'ok' : 'null'),
-        'profiles   : ' + d.profiles,
-        '─────────────',
-        'lastError  :',
+        '🐯 Beast Log v' + d.v + '  (' + (typeof nowHHMM === 'function' ? nowHHMM() : '') + ')',
+        '─ 환경 ─',
+        'inDom/css/font : ' + d.inDom + ' / ' + d.cssLoaded + ' / ' + d.fontLoaded,
+        'viewport       : ' + d.vp.w + 'x' + d.vp.h,
+        'ctx / profiles : ' + (d.ctx ? 'ok' : 'null') + ' / ' + d.profiles,
+        'UA             : ' + ((typeof navigator !== 'undefined' && navigator.userAgent) || '?').slice(0, 90),
+        '─ 설정 ─',
+        'profile  : ' + (E.connectionProfile || '(메인 연결)'),
+        'auto/chain/mono : ' + (E.autoDetect ? 'on' : 'off') + ' / ' + (E.chainOn ? 'on' : 'off') + ' / ' + (E.spriteMono ? 'on' : 'off'),
+        'theme/mascot : ' + (E.theme || 'pudding') + ' / ' + (E.mascot || '?'),
+        'depth/inject : ' + (E.contextDepth || 'balance') + ' / ' + (S.settings && S.settings.injectDefault ? 'on' : 'off'),
+        '─ 상태 ─',
+        'Lv ' + (S.level || 1) + ' · xp ' + (S.xp || 0) + ' · 돈 ' + (S.money || 0),
+        'mood/hunger/hp : ' + S.mood + ' / ' + S.hunger + ' / ' + S.hp,
+        '조우 ' + ((S.encounters || []).length) + ' · NPC ' + (Object.keys(S.npcs || {}).length) + ' · 아이템 ' + ((S.items || []).length),
+        '퀘스트 ' + ((S.quests || []).length) + ' · 비밀 ' + ((S.secrets || []).length) + ' · 알바 ' + ((S.jobs || []).length),
+        '─ 최근 로그 ─',
+        (DBG_LOG.length ? DBG_LOG.slice(-20).join('\n') : '(없음)'),
+        '─ 마지막 에러 ─',
         d.lastError,
     ].join('\n');
+}
+function copyDebug(text, taEl) {
+    const done = ok => flash(ok ? '📋 복사됨!' : '아래 칸을 길게 눌러 복사해줘');
+    try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(() => done(true)).catch(() => fallbackCopyDebug(text, taEl, done));
+            return;
+        }
+    } catch (e) { /* noop */ }
+    fallbackCopyDebug(text, taEl, done);
+}
+function fallbackCopyDebug(text, taEl, done) {
+    try {
+        if (taEl) { taEl.removeAttribute('readonly'); taEl.focus(); taEl.select(); try { taEl.setSelectionRange(0, (text || '').length); } catch (e2) { /* noop */ } }
+        const ok = document.execCommand && document.execCommand('copy');
+        if (taEl) taEl.setAttribute('readonly', 'readonly');
+        done(!!ok);
+    } catch (e) { done(false); }
 }
 function showDiagPopup() {
     closePopup();

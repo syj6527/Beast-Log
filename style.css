@@ -367,6 +367,14 @@
 #beastlog-settings .bls-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0; }
 #beastlog-settings .bls-row span { font-size: 13px; }
 #beastlog-settings .bls-ver { margin-top: 10px; font-family: 'Galmuri11', monospace; font-size: 10px; opacity: .7; }
+#beastlog-settings .bls-dbgtap { cursor: pointer; -webkit-user-select: none; user-select: none; }
+#beastlog-settings .bls-dbg { margin-top: 10px; border: 1px dashed rgba(0,0,0,.25); border-radius: 9px; padding: 10px; }
+#beastlog-settings .bls-dbg-head { font-family: 'Galmuri11', monospace; font-size: 11px; margin-bottom: 7px; }
+#beastlog-settings .bls-dbg-hint { font-size: 9px; opacity: .6; margin-left: 4px; }
+#beastlog-settings .bls-dbg-out { width: 100%; box-sizing: border-box; height: 230px; resize: vertical; font-family: 'Galmuri11', monospace; font-size: 10.5px; line-height: 1.65; white-space: pre; overflow: auto; background: rgba(0,0,0,.05); border: 1px solid rgba(0,0,0,.18); border-radius: 8px; padding: 9px; -webkit-user-select: text; user-select: text; }
+#beastlog-settings .bls-dbg-btns { display: flex; gap: 8px; margin-top: 8px; }
+#beastlog-settings .bls-dbg-btns button { flex: 1; font-family: 'Galmuri11', monospace; font-size: 11px; padding: 9px; border: 1px solid rgba(0,0,0,.25); border-radius: 8px; background: rgba(0,0,0,.04); cursor: pointer; }
+#beastlog-settings .bls-dbg-btns button:active { background: rgba(0,0,0,.12); }
 .bl-wand-ic { text-align: center; }
 
 /* ===== 모바일 안정성 ===== */
