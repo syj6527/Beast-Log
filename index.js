@@ -1,4 +1,4 @@
-// 🐯 비스트로그 (Beast Log) v0.48.0 — 다마고치 강화: 상태 0~100%(기분·배고픔·체력)로 통일+표시, 배고픔 2시간당 -10% 자동감소(채팅 중), 바닥 시 기분·체력 연쇄+레벨다운(진화해제, 죽음X). 표정: 슬픔→눈물(ㅠㅠ), 자는 표정(zzz) 추가(유휴+상태양호 시 랜덤, 건드리면 깨움). 밥: 60%까지 무료+이상은 유료 랜덤먹이. 퀘스트 XP보상 추가. 레벨 ×70(30%빠름). 도감 관계표시 키움
+// 🐯 비스트로그 (Beast Log) v0.48.0 — 다마고치 강화: 상태 0~100%(기분·배고픔·체력)로 통일+표시, 배고픔 2시간당 -10% 자동감소(채팅 중), 바닥 시 기분·체력 연쇄+레벨다운(진화해제, 죽음X). 표정: 슬픔→눈물(ㅠㅠ), 자는 표정(큰 Z 2개 둥실+몸 호흡) 추가(유휴+상태양호 시 랜덤, 건드리면 깨움). 병아리·판다도 전용 표정(판다 잠=반픽셀 흰자). 밥: 60%까지 무료+이상은 유료 랜덤먹이(1만/1.5만/2만). 퀘스트 XP보상 추가. 레벨 XP 제곱곡선(화면엔 0~100%). 도감 관계표시 키움
 // 버전 3곳 동시 갱신: (1) 이 주석, (2) BEASTLOG_VERSION, (3) manifest.json
 
 const BEASTLOG_VERSION = '0.48.0';
@@ -72,9 +72,32 @@ const TEAR = '#5a9fd6', ZCOL = '#7d9bd6';
 const EYE_EXPR_EXTRA = {
     sad:  [[4, 9, TEAR], [4, 10, TEAR], [11, 9, TEAR], [11, 10, TEAR]],   // 눈 밑 눈물 줄기 ㅠㅠ
 };
-// 자는 표정 zzz: 머리 위로 확장한 영역(음수 y)에 그림 — 어떤 마스코트와도 안 겹침
-// 좌표계: 원래 스프라이트 위에 4칸 띄운 공간(y = -4 ~ -1), Z 지그재그
-const SLEEP_ZZZ = [[12, -4], [13, -4], [14, -4], [14, -3], [13, -3], [12, -2], [12, -1], [13, -1], [14, -1]];
+// 자는 표정 zzz: 큰 Z 두 개를 대각선으로, 머리 위 여백(음수 y)에 그림. overflow:visible로 박스 밖 표시.
+// Z 한 글자 패턴(4×5): 윗가로/대각선/아랫가로
+const Z_PATTERN = [[0,0],[1,0],[2,0],[3,0], [2,1], [1,2], [0,3], [0,4],[1,4],[2,4],[3,4]];
+// 두 Z의 배치: [원점x, 원점y, 픽셀크기, 애니클래스]
+const SLEEP_ZS = [
+    { ox: 10.5, oy: -1.5, sz: 0.68, cls: 'bl-z1' },   // 작은 Z (머리/귀에 바짝)
+    { ox: 13, oy: -4.5, sz: 0.85, cls: 'bl-z2' },     // 큰 Z (대각선 위)
+];
+// 병아리 전용 표정 (점눈: 왼 x5,6 / 오른 x9,10, y4,5). base를 몸색으로 지우고 표정 픽셀
+const CHICK_EYE_BASE = [[5,4],[6,4],[5,5],[6,5],[9,4],[10,4],[9,5],[10,5]];
+const CHICK_EXPR = {
+    happy: [[5,5],[6,4],[9,4],[10,5]],          // ^ ^
+    sad:   [[5,4],[6,4],[9,4],[10,4]],          // 윗눈 + 눈물(EXTRA)
+    tired: [[5,5],[6,5],[9,5],[10,5]],          // 일자 - -
+    sleep: [[5,5],[6,5],[9,5],[10,5]],          // 감은 - -
+};
+const CHICK_TEAR = [[5,6,TEAR],[10,6,TEAR]];
+// 판다 전용 표정 (흰자 Y: 왼 x4y7, 오른 x11y7). 흰자를 눈두덩(B) 안에서 이동
+const PANDA_EYE_BASE = [[4,7],[11,7]];
+const PANDA_EXPR = {        // [x, y] (정수). 흰자를 옮길 위치
+    happy: [[4,6],[11,6]],          // 위로 → 초승달 눈웃음
+    sad:   [[4,8],[11,8]],          // 아래로 → 처진 눈 + 눈물(EXTRA)
+    // tired / sleep은 반픽셀(중앙 고정) — 별도 처리, sleep은 zzz 추가
+};
+const PANDA_SLEEP_HALF = [[4,7],[11,7]];  // 반픽셀 흰자 위치 (중앙 고정, 거의 감김)
+const PANDA_TEAR = [[4,10,TEAR],[11,10,TEAR]];
 // 진화 비주얼: tier2(자란다)=색 짙어짐, tier3(각성)=고유 변신. mono모드/picker/shop엔 미적용(tier 1)
 const SPR_CHICK2 = { w: 16, h: 15, pal: { O: '#f6d442', Y: '#ee882a', P: '#f09e9e' }, rows: ['................', '................', '...KKKKKKKKKK...', '..KOOOOOOOOOOK..', '.KOOOOOOOOOOOOK.', '.KOOOOOOOOOOOOK.', '.KOOOOOOOOOOOOK.', '.KOOOOOOOOOOOOK.', '.KOOKKOOOOKKOOK.', '.KPPKKOOOOKKPPK.', '.KOOOOOOOOOOOOK.', '.KOOOOYYYYOOOOK.', '.KOOOOOYYOOOOOK.', '..KKKKKKKKKKKK..', '................'] };            // 2단계: 병아리
 const SPR_CHICK3 = { w: 16, h: 15, pal: { O: '#fdfaf0', R: '#e2483a', Y: '#ee882a' }, rows: ['.....RR.RR......', '....RRRRRRR.....', '...KKKKKKKKKK...', '..KOOOOOOOOOOK..', '.KOOOOOOOOOOOOK.', '.KOOOOOOOOOOOOK.', '.KOOOOOOOOOOOOK.', '.KOOOOOOOOOOOOK.', '.KOOKKOOOOKKOOK.', '.KOOKKOOOOKKOOK.', '.KOOOOOOOOOOOOK.', '.KOOOOYYYYOOOOK.', '.KOOOOOYYOOOOOK.', '..KKKKKKKKKKKK..', '................'] };  // 3단계: 닭(흰 얼굴+빨간 볏)
@@ -122,9 +145,29 @@ function spriteSVG(key, size, mono, expr, tier) {
         for (const [x, y] of EYE_BASE) grid[y][x] = body;             // 눈 지움(몸색)
         for (const [x, y] of EYE_EXPR[effExpr]) grid[y][x] = BL_INK;  // 표정 그림
     }
-    if (!s.noExpr && effExpr && EYE_EXPR_EXTRA[effExpr]) {             // 색상 추가픽셀(눈물·zzz)
-        for (const [x, y, col] of EYE_EXPR_EXTRA[effExpr]) {
-            if (y >= 0 && y < s.h && x >= 0 && x < s.w) grid[y][x] = mono ? BL_INK : col;
+    let tearPixels = null;   // 눈물 픽셀(애니메이션용) — grid에 직접 안 그리고 별도 렌더
+    if (!s.noExpr && effExpr && EYE_EXPR_EXTRA[effExpr]) {             // 색상 추가픽셀(눈물)
+        tearPixels = EYE_EXPR_EXTRA[effExpr].map(([x, y, col]) => [x, y, mono ? BL_INK : col]);
+    }
+    // 병아리 전용 표정 (점눈 변형) — 단계 변신(닭) 전에만, mono 아닐 때
+    let pandaHalf = null;
+    if (key === 'chick' && !mono && (!vis || !vis.sprite) && effExpr && CHICK_EXPR[effExpr]) {
+        const body = s.pal.O;
+        for (const [x, y] of CHICK_EYE_BASE) grid[y][x] = body;       // 점눈 지움
+        for (const [x, y] of CHICK_EXPR[effExpr]) grid[y][x] = BL_INK;
+        if (effExpr === 'sad') tearPixels = CHICK_TEAR.slice();
+    }
+    // 판다 전용 표정 (흰자 이동) — mono 아닐 때
+    if (key === 'panda' && !mono && effExpr) {
+        const padB = (palOv && palOv.B) || s.pal.B;   // 눈두덩색
+        const irisC = (palOv && palOv.Y) || s.pal.Y;  // 흰자색
+        if (effExpr === 'tired' || effExpr === 'sleep') {
+            for (const [x, y] of PANDA_EYE_BASE) grid[y][x] = padB;   // 기본 흰자 지움
+            pandaHalf = { coords: PANDA_SLEEP_HALF, color: irisC };   // 반픽셀(중앙 고정) — 졸린 눈
+        } else if (PANDA_EXPR[effExpr]) {
+            for (const [x, y] of PANDA_EYE_BASE) grid[y][x] = padB;   // 기본 흰자 지움
+            for (const [x, y] of PANDA_EXPR[effExpr]) grid[y][x] = irisC;  // 새 위치
+            if (effExpr === 'sad') tearPixels = PANDA_TEAR.slice();
         }
     }
     if (vis && vis.eyeColor && !s.noExpr) {                            // 빛나는 눈(고양이/토끼/구미호)
@@ -147,16 +190,40 @@ function spriteSVG(key, size, mono, expr, tier) {
             x += run;
         }
     }
-    // 자는 표정: 머리 위 여백에 zzz를 그림. viewBox는 그대로 두고 overflow로 위에 띄움(레이아웃 안 흔들림)
-    const isSleep = (effExpr === 'sleep' && !s.noExpr);
+    // 판다 반픽셀 흰자(졸린 눈): 별도 rect로 아래 절반만
+    let extraRects = '';
+    if (pandaHalf) {
+        for (const [x, y] of pandaHalf.coords) extraRects += `<rect x="${x}" y="${y + 0.5}" width="1" height="0.5" fill="${pandaHalf.color}"/>`;
+    }
+    // 눈물 애니메이션: 좌/우 눈물을 각각 그룹으로 묶어 똑똑 떨어지게
+    let hasTear = false;
+    if (tearPixels && tearPixels.length) {
+        hasTear = true;
+        const leftPx = tearPixels.filter(([x]) => x <= 7);
+        const rightPx = tearPixels.filter(([x]) => x > 7);
+        const drawSet = (px, cls) => {
+            if (!px.length) return '';
+            const r = px.map(([x, y, col]) => `<rect x="${x}" y="${y}" width="1" height="1" fill="${col}"/>`).join('');
+            return `<g class="${cls}">${r}</g>`;
+        };
+        extraRects += drawSet(leftPx, 'bl-tear bl-tear-l') + drawSet(rightPx, 'bl-tear bl-tear-r');
+    }
+    // 자는 표정: 큰 Z 두 개를 머리 위 여백에 그림. 병아리/판다도 자는 표정 허용.
+    const canSleep = !mono && (!s.noExpr || key === 'chick' || key === 'panda') && (!vis || !vis.sprite || key !== 'chick');
+    const isSleep = (effExpr === 'sleep' && canSleep);
     if (isSleep) {
-        const zc = mono ? BL_INK : ZCOL;
-        for (const [x, y] of SLEEP_ZZZ) rects += `<rect x="${x}" y="${y}" width="1" height="1" fill="${zc}"/>`;
+        for (const z of SLEEP_ZS) {
+            let zr = '';
+            for (const [px, py] of Z_PATTERN) {
+                zr += `<rect x="${z.ox + px * z.sz}" y="${z.oy + py * z.sz}" width="${z.sz}" height="${z.sz}" fill="${ZCOL}"/>`;
+            }
+            extraRects += `<g class="${z.cls}">${zr}</g>`;
+        }
     }
     const h = Math.round(size * s.h / s.w);
     const sleepCls = isSleep ? ' bl-sleeping' : '';
-    const ov = isSleep ? ' style="overflow:visible"' : '';
-    return `<svg class="bl-sprite${sleepCls}" width="${size}" height="${h}" viewBox="0 0 ${s.w} ${s.h}"${ov} shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">${rects}</svg>`;
+    const ov = (isSleep || hasTear) ? ' style="overflow:visible"' : '';
+    return `<svg class="bl-sprite${sleepCls}" width="${size}" height="${h}" viewBox="0 0 ${s.w} ${s.h}"${ov} shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">${rects}${extraRects}</svg>`;
 }
 function stateExpr() {
     const hunger = STATE.hunger == null ? 80 : STATE.hunger;
@@ -368,8 +435,8 @@ const FEED_FREE_GAIN = 20;  // 무료 1회 회복량
 // 유료 먹이 메뉴: 회복량 → 가격
 const FEED_PAID_MENU = [
     { gain: 5, price: 10000, food: '고급 트릿 한 알' },
-    { gain: 10, price: 20000, food: '수제 간식 한 접시' },
-    { gain: 30, price: 30000, food: '푸짐한 진수성찬' },
+    { gain: 10, price: 15000, food: '수제 간식 한 접시' },
+    { gain: 30, price: 20000, food: '푸짐한 진수성찬' },
 ];
 function onFeed() {
     const hunger = STATE.hunger == null ? 80 : STATE.hunger;
@@ -969,7 +1036,7 @@ function applyOutcome(item, choiceLabel, outcome, kind) {
 }
 function clamp0100(n) { return Math.max(0, Math.min(100, Math.round(n))); }
 function clamp05(n) { return clamp0100(n); }  // 하위호환 별칭
-function levelNeed(lv) { return lv * 70; }   // 레벨업 필요 XP (기존 ×100 → ×70, 30% 빠름)
+function levelNeed(lv) { return Math.round(40 + lv * lv * 10); }   // 제곱 곡선: 초반 빠르고 후반 갈수록 확 느려짐
 function levelCheck() {
     let need = levelNeed(STATE.level);
     while (STATE.xp >= need) { STATE.xp -= need; STATE.level += 1; flash(`⭐ 레벨업! Lv.${STATE.level}`); need = levelNeed(STATE.level); }
@@ -1535,7 +1602,7 @@ function renderFull() {
     fullEl.querySelector('.bl-st-mood').textContent = clamp0100(STATE.mood) + '%';
     fullEl.querySelector('.bl-st-hunger').textContent = clamp0100(STATE.hunger) + '%';
     fullEl.querySelector('.bl-st-hp').textContent = clamp0100(STATE.hp) + '%';
-    fullEl.querySelector('.bl-pet-xptext').textContent = `${STATE.xp} / ${need} XP`;
+    fullEl.querySelector('.bl-pet-xptext').textContent = `${Math.min(100, Math.floor((STATE.xp / need) * 100))}%`;
     fullEl.querySelector('.bl-pet-xpbar i').style.width = Math.min(100, (STATE.xp / need) * 100) + '%';
     fullEl.querySelector('.bl-pet-rep').textContent = (STATE.rep > 0 ? '+' : '') + STATE.rep;
     fullEl.querySelector('.bl-pet-money').textContent = fmtMoney(STATE.money);

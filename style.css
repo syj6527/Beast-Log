@@ -82,8 +82,17 @@
 .bl-mini-status { background: var(--bl-card); border: 2px solid var(--bl-line); border-radius: 9px; padding: 8px 9px; }
 .bl-ms-row { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
 .bl-sprite { display: block; }
-@keyframes bl-sleep-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(0.5px) scale(0.985); } }
-.bl-sprite.bl-sleeping { animation: bl-sleep-breathe 2.8s ease-in-out infinite; transform-origin: center bottom; }
+/* 자는 표정: 몸은 중간 강도로 부풀었다 줄어듦(호흡) */
+@keyframes bl-sleep-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+.bl-sprite.bl-sleeping { animation: bl-sleep-breathe 2.6s ease-in-out infinite; transform-origin: center bottom; overflow: visible; }
+/* zzz 두 개가 위아래로 둥실, 시간차 두고 */
+@keyframes bl-zbob { 0%, 100% { transform: translateY(0); opacity: .8; } 50% { transform: translateY(-2.5px); opacity: 1; } }
+.bl-sprite .bl-z1 { animation: bl-zbob 1.8s ease-in-out infinite; }
+.bl-sprite .bl-z2 { animation: bl-zbob 1.8s ease-in-out infinite; animation-delay: .4s; }
+/* 눈물: 아래로 또르르 흐르며 사라짐 */
+@keyframes bl-tear-drop { 0% { transform: translateY(-1px); opacity: 0; } 25% { opacity: 1; } 80% { opacity: .9; } 100% { transform: translateY(2.5px); opacity: 0; } }
+.bl-sprite .bl-tear { animation: bl-tear-drop 1.6s ease-in infinite; }
+.bl-sprite .bl-tear-r { animation-delay: .5s; }
 .bl-pet-emoji-mini { cursor: pointer; line-height: 0; flex-shrink: 0; animation: bl-bob 2.4s ease-in-out infinite; }
 .bl-pet-emoji-mini:active { transform: scale(.9); }
 .bl-ms-id { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
