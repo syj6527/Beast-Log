@@ -1602,7 +1602,7 @@ function renderFull() {
     fullEl.querySelector('.bl-st-mood').textContent = clamp0100(STATE.mood) + '%';
     fullEl.querySelector('.bl-st-hunger').textContent = clamp0100(STATE.hunger) + '%';
     fullEl.querySelector('.bl-st-hp').textContent = clamp0100(STATE.hp) + '%';
-    fullEl.querySelector('.bl-pet-xptext').textContent = `${Math.min(100, Math.floor((STATE.xp / need) * 100))}%`;
+    fullEl.querySelector('.bl-pet-xptext').textContent = `${Math.min(100, Math.floor((STATE.xp / need) * 100))}% / 100%`;
     fullEl.querySelector('.bl-pet-xpbar i').style.width = Math.min(100, (STATE.xp / need) * 100) + '%';
     fullEl.querySelector('.bl-pet-rep').textContent = (STATE.rep > 0 ? '+' : '') + STATE.rep;
     fullEl.querySelector('.bl-pet-money').textContent = fmtMoney(STATE.money);
