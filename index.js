@@ -588,7 +588,8 @@ ${getScene()}규칙:
 - voice: 복권 산 계기(왜 샀나) + 긁는 과정·결과를 2~3문장 데드팬 코미디로 (알바 후기 정도 길이).
 - mood: 그 결과를 본 그 캐릭터의 한 줄 소감(짧고 그 캐릭터다운 말투로).
 - ${win ? '당첨이지만 상금도 짜다(인생역전 아님). 너무 들뜨지 말고 그 캐릭터다운 반응.' : '꽝. 허무하거나 분하거나 — 그 캐릭터답게.'}
-형식(JSON만, 코드펜스 금지): {"voice":"2~3문장 데드팬 후기","mood":"한 줄 소감"}
+- **who에는 실제로 복권을 긁은 그 캐릭터의 이름을 정확히 적어라** (대화에 나온 이름 그대로).
+형식(JSON만, 코드펜스 금지): {"who":"복권 긁은 캐릭터 이름","voice":"2~3문장 데드팬 후기","mood":"한 줄 소감"}
 [대화 맥락]
 ${getConvo()}`;
 }
@@ -608,16 +609,17 @@ async function buyLotto() {
     if (result.prize > 0) STATE.money = (STATE.money || 0) + result.prize;
     saveState(STATE); renderAll();
     showLoading(pick(LOTTO_LOAD));
-    let voice = '', mood = '';
+    let voice = '', mood = '', who = '';
     try {
         const txt = await llmGenerate(buildLottoPrompt(result, lastPay), 1024);
         const o = parseLLMJson(txt);
         voice = subMacros(String(o.voice || '')).slice(0, 300);
         mood = subMacros(String(o.mood || '')).slice(0, 120);
+        who = subMacros(String(o.who || '')).slice(0, 40);
     } catch (err) { if (!handleLlmError(err)) { voice = result.prize > 0 ? '…당첨이네. 별 거 아니지만.' : '…꽝이다. 그럴 줄 알았어.'; } }
     finally { _blBusy = false; }
     closePopup();
-    showLottoResult(result, voice, mood);
+    showLottoResult(result, voice, mood, who);
 }
 function resetLotto() { STATE.lottoUsed = 0; saveState(STATE); renderAll(); }
 const FEED_FOOD = ['편의점 삼각김밥', '길에서 주운 붕어빵', '유통기한 임박 소시지', '수상한 통조림', '사장이 남긴 식은 치킨', '정체불명의 사료', '눅눅한 새우깡', '반쯤 녹은 아이스크림', '누가 흘린 호두과자'];
@@ -821,10 +823,12 @@ function showJobResult(job) {
     pop.querySelector('.bl-result-ok').addEventListener('click', closePopup);
 }
 
-function showLottoResult(result, voice, mood) {
+function showLottoResult(result, voice, mood, who) {
     closePopup();
     const ctx = getCtx();
-    const charName = (STATE.lastJob && STATE.lastJob.who && STATE.lastJob.who.trim()) ? STATE.lastJob.who.trim() : ((ctx && ctx.name2) ? ctx.name2 : '');
+    const charName = (who && who.trim()) ? who.trim()
+        : ((STATE.lastJob && STATE.lastJob.who && STATE.lastJob.who.trim()) ? STATE.lastJob.who.trim()
+        : ((ctx && ctx.name2) ? ctx.name2 : ''));
     const win = result.prize > 0;
     const pop = document.createElement('div'); pop.id = 'beastlog-popup';
     pop.innerHTML = `
