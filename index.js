@@ -558,10 +558,10 @@ function clearJobs() { showConfirm('알바 내역 비우기', '알바 기록을 
 
 // ── 복권 ──
 function lottoUnlocked() {
-    // 마지막 알바를 뛰었고, 그 알바비가 LOTTO_UNLOCK 이하일 때만
-    const lj = STATE.lastJob;
-    if (!lj) return false;
-    return (lj.pay || 0) <= LOTTO_UNLOCK;
+    return true;   // ⚠️ 테스트용 임시: 항상 해금 (원복 시 아래 주석 코드로)
+    // const lj = STATE.lastJob;
+    // if (!lj) return false;
+    // return (lj.pay || 0) <= LOTTO_UNLOCK;   // 알바비 1.5만 이하일 때만
 }
 function lottoLeft() { return Math.max(0, LOTTO_MAX - (STATE.lottoUsed || 0)); }
 function canLotto() { return lottoUnlocked() && lottoLeft() > 0 && (STATE.money || 0) >= LOTTO_PRICE; }
