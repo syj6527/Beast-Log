@@ -1,4 +1,4 @@
-// ─── 🎤 Hot Mic v2.30.1 ───
+// ─── 🎤 Hot Mic v2.30.2 ───
 // 캐릭터 몰래 보는 감독판 코멘터리
 // RP에 개입하지 않음. 해설은 기억되지 않음. 단방향.
 
@@ -6,7 +6,7 @@ import { getContext, extension_settings } from '../../../extensions.js';
 import { event_types, eventSource, saveSettingsDebounced } from '../../../../script.js';
 
 const EXT_NAME = 'hot-mic';
-const HOTMIC_VERSION = '2.30.1';
+const HOTMIC_VERSION = '2.30.2';
 
 // ─── 기본 설정 ───
 const DEFAULT_SETTINGS = {
@@ -110,6 +110,27 @@ function safeKeys(o) {
     catch (e) { return '?'; }
 }
 
+// 에러 객체에서 가능한 모든 단서(메시지/status/속성/cause)를 뽑아낸다
+function errDetail(e) {
+    if (!e) return 'unknown';
+    const parts = [String(e.message || e)];
+    const status = e.status ?? e.statusCode ?? e.code ?? e.response?.status;
+    if (status != null) parts.push('status=' + status);
+    if (e.response?.statusText) parts.push(e.response.statusText);
+    try {
+        const own = {};
+        for (const k of Object.keys(e)) {
+            if (k === 'stack' || k === 'message') continue;
+            const v = e[k];
+            own[k] = (v && typeof v === 'object') ? safeKeys(v) : String(v).slice(0, 100);
+        }
+        const j = JSON.stringify(own);
+        if (j && j !== '{}') parts.push('props=' + j.slice(0, 250));
+    } catch (x) { /* noop */ }
+    if (e.cause) parts.push('cause=' + String(e.cause.message || e.cause).slice(0, 150));
+    return parts.join(' | ');
+}
+
 // 격리 호출을 여러 방식으로 순차 시도 (ST 버전/프로바이더, 특히 Vertex AI 호환).
 // 하나라도 본문이 나오면 그걸 반환. 전부 실패하면 빈 문자열 + 각 방식 에러를 로그에 남긴다.
 async function isolatedGenerate(cmrs, profileId, fullPrompt, maxTokens, signal) {
@@ -119,19 +140,38 @@ async function isolatedGenerate(cmrs, profileId, fullPrompt, maxTokens, signal) 
         ['배열',       () => cmrs.sendRequest(profileId, messages, maxTokens)],
         ['문자열',     () => cmrs.sendRequest(profileId, fullPrompt, maxTokens)],
     ];
-    for (const [label, fn] of attempts) {
-        if (signal?.aborted) { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
-        try {
-            const result = await fn();
-            const text = extractCmrsText(result);
-            if (text) { hotmicDebug(`✅ 격리 호출 성공 [${label}] — 메인 연결 미사용`); return text; }
-            hotmicDebug(`격리 [${label}] 응답 비어있음. result 키=[${safeKeys(result)}]`);
-        } catch (e) {
-            if (signal?.aborted || e?.name === 'AbortError') throw e;
-            hotmicDebug(`격리 [${label}] 실패: ${e?.message || e}`);
+    // 격리 호출 동안만 fetch를 감싸 실제 HTTP status·응답 본문을 포착 (ST가 'API request failed'로 뭉뚱그려도 원인 파악)
+    const origFetch = window.fetch;
+    let httpCapture = null;
+    try {
+        window.fetch = async (...args) => {
+            const res = await origFetch.apply(window, args);
+            try {
+                if (res && !res.ok) {
+                    let body = '';
+                    try { body = (await res.clone().text()).slice(0, 280); } catch (x) {}
+                    httpCapture = `HTTP ${res.status} ${res.statusText || ''} ${body}`.trim();
+                }
+            } catch (x) { /* noop */ }
+            return res;
+        };
+        for (const [label, fn] of attempts) {
+            if (signal?.aborted) { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
+            httpCapture = null;
+            try {
+                const result = await fn();
+                const text = extractCmrsText(result);
+                if (text) { hotmicDebug(`✅ 격리 호출 성공 [${label}] — 메인 연결 미사용`); return text; }
+                hotmicDebug(`격리 [${label}] 응답 비어있음. result 키=[${safeKeys(result)}]${httpCapture ? ' | ' + httpCapture : ''}`);
+            } catch (e) {
+                if (signal?.aborted || e?.name === 'AbortError') throw e;
+                hotmicDebug(`격리 [${label}] 실패: ${errDetail(e)}${httpCapture ? ' | ' + httpCapture : ''}`);
+            }
         }
+        return '';
+    } finally {
+        window.fetch = origFetch;
     }
-    return '';
 }
 
 // ─── 상태 ───
@@ -642,7 +682,7 @@ ${chatHistory}
     // 분량 → 응답 토큰 상한. thinking 모델(예: Gemini 2.5 Flash)은 사고(thinking) 토큰이 응답 예산을
     // 먼저 잡아먹어, 상한이 낮으면 본문이 빈 채로 돌아온다. 그래서 바닥을 넉넉히 둔다.
     // (이건 '상한'일 뿐 — 실제 출력 길이는 프롬프트가 통제하므로 짧은 설정도 짧게 나온다.)
-    const maxTokens = { short: 2000, normal: 4096, long: 6144, max: 8192 }[settings.length] || 4096;
+    const maxTokens = { short: 1500, normal: 3000, long: 4500, max: 6000 }[settings.length] || 3000;
 
     hotmicDebug(`연결 진단: 프로필='${profileName || '(기본)'}' / cmrs=${cmrs ? 'O' : 'X'} / 대상=${targetProfile ? ('찾음(' + targetProfile.name + ')') : '없음'} / 프로필수=${profiles.length}`);
 
